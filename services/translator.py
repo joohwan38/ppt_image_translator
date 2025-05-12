@@ -113,10 +113,11 @@ class TranslationService:
                             shape = slide.shapes[text_element['shape_idx']]
                             for paragraph in shape.text_frame.paragraphs:
                                 for run in paragraph.runs:
-                                    if cell.text.strip() == text_element['text']:
-                                        # 숫자만 있는 텍스트인지 확인 (self. 추가)
-                                        if self.is_numeric_text(cell.text):
-                                            logger.info(f"숫자 텍스트 감지됨, 번역 건너뜀: '{cell.text}'")
+                                    # 수정: cell.text -> run.text
+                                    if run.text.strip() == text_element['text']:
+                                        # 숫자만 있는 텍스트인지 확인 (cell.text -> run.text)
+                                        if self.is_numeric_text(run.text):
+                                            logger.info(f"숫자 텍스트 감지됨, 번역 건너뜀: '{run.text}'")
                                             text_element['translated'] = True
                                         else:
                                             # 번역
@@ -140,7 +141,7 @@ class TranslationService:
                                 # 번역
                                 if cell.text.strip() == text_element['text']:
                                     # 숫자만 있는 텍스트인지 확인
-                                    if is_numeric_text(cell.text):
+                                    if self.is_numeric_text(cell.text):
                                         logger.info(f"숫자 텍스트 감지됨, 번역 건너뜀: '{cell.text}'")
                                         text_element['translated'] = True
                                     else:

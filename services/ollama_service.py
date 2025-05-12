@@ -6,6 +6,7 @@ import requests
 import psutil
 import json
 import logging
+import base64
 
 logger = logging.getLogger(__name__)
 
