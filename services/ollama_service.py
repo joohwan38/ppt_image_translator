@@ -159,6 +159,7 @@ class OllamaService:
     def extract_text_from_image(self, image_base64, model_name):
         """Vision 모델을 사용하여 이미지에서 텍스트 추출 (시간 측정 추가)"""
         try:
+            
             # 단계 1: API 요청 준비 시간 측정
             prep_start = time.time()
             
@@ -248,44 +249,11 @@ class OllamaService:
             logger.exception(f"모델 상태 확인 오류: {e}")
             return False, None
         
-    # services/ollama_service.py 파일에 새 메소드 추가
+    # services/ollama_service.py 파일에서
     def warmup_vision_model(self, model_name):
-        """비전 모델 사전 로드 및 웜업"""
-        logger.info(f"모델 {model_name} 웜업 시작")
-        
-        try:
-            # 간단한 테스트 이미지 생성 (1x1 픽셀 투명 이미지)
-            from PIL import Image
-            import io
-            
-            test_img = Image.new('RGBA', (1, 1), (255, 255, 255, 0))
-            img_byte = io.BytesIO()
-            test_img.save(img_byte, format='PNG')
-            img_byte.seek(0)
-            
-            test_base64 = base64.b64encode(img_byte.read()).decode('utf-8')
-            
-            # 웜업 요청 (짧은 타임아웃으로 실제 응답은 기다리지 않음)
-            logger.info("웜업 요청 전송")
-            try:
-                requests.post(
-                    f"{self.url}/api/generate",
-                    json={
-                        "model": model_name,
-                        "prompt": "Warmup request",
-                        "images": [test_base64]
-                    },
-                    timeout=2
-                )
-            except requests.exceptions.Timeout:
-                # 타임아웃은 예상된 결과 - 모델 로드만 되면 됨
-                logger.info("웜업 요청 타임아웃 (정상)")
-            
-            logger.info(f"모델 {model_name} 웜업 완료")
-            return True
-        except Exception as e:
-            logger.exception(f"모델 웜업 오류: {e}")
-            return False
+        """비전 모델 사전 로드 및 웜업 (비활성화됨)"""
+        logger.info(f"모델 {model_name} 웜업 기능이 비활성화되었습니다")
+        return True  # 성공한 것처럼 True 반환
     
     def translate_text(self, text, source_lang, target_lang, model):
         """Text 모델을 사용하여 텍스트 번역"""

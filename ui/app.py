@@ -376,15 +376,15 @@ class PowerPointTranslatorApp:
                 text_models, vision_models = self.update_models_list()
                 
                 # 필요한 모델이 설치되어 있는지 확인
-                if vision_models:
+                # if vision_models:
                     # 새로 추가: Vision 모델 웜업
-                    vision_model = self.vision_model_var.get()
-                    if vision_model and "Vision 모델 없음" not in vision_model:
-                        self.status_label.config(text=f"{vision_model} 모델 로드 중...")
-                        threading.Thread(
-                            target=lambda: self.ollama_service.warmup_vision_model(vision_model),
-                            daemon=True
-                        ).start()
+                    # vision_model = self.vision_model_var.get()
+                    # if vision_model and "Vision 모델 없음" not in vision_model:
+                    #     self.status_label.config(text=f"{vision_model} 모델 로드 중...")
+                    #     threading.Thread(
+                    #         target=lambda: self.ollama_service.warmup_vision_model(vision_model),
+                    #         daemon=True
+                    #     ).start()
                 
                 self.models_initialized = True
         
@@ -670,12 +670,12 @@ class PowerPointTranslatorApp:
             self.logger.info(f"번역 설정: {source_lang} → {target_lang}, Vision: {vision_model}, Text: {text_model}")
             
             # 모델 상태 확인 추가
-            self.status_label.config(text="모델 상태 확인 중...")
-            is_loaded, _ = translation_service.ollama_service.check_ollama_model_status(vision_model)
+            # self.status_label.config(text="모델 상태 확인 중...")
+            # is_loaded, _ = translation_service.ollama_service.check_ollama_model_status(vision_model)
             
-            if not is_loaded:
-                self.status_label.config(text=f"{vision_model} 모델 로드 중...")
-                translation_service.ollama_service.warmup_vision_model(vision_model)
+            # if not is_loaded:
+            #     self.status_label.config(text=f"{vision_model} 모델 로드 중...")
+            #     translation_service.ollama_service.warmup_vision_model(vision_model)
             
             # 번역 서비스 호출 (디버그 모드 전달)
             output_path = translation_service.translate_ppt(

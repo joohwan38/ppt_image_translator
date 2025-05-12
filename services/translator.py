@@ -39,9 +39,9 @@ class TranslationService:
                 pass
         
         # 일반적인 횟수 패턴 감지 (예: "1-2회", "주 3-4회")
-        import re
-        if re.match(r'^[0-9]+[-~][0-9]+회$', text) or re.match(r'^주 [0-9]+[-~][0-9]+회$', text):
-            return True
+        # import re
+        # if re.match(r'^[0-9]+[-~][0-9]+회$', text) or re.match(r'^주 [0-9]+[-~][0-9]+회$', text):
+        #     return True
         
         # 소수점 및 숫자만 있는지 최종 확인
         try:
@@ -66,14 +66,17 @@ class TranslationService:
                 status_callback("번역 프로세스 시작")
             
             # 모델 상태 확인 추가
-            if status_callback:
-                status_callback("모델 상태 확인 중...")
-            model_loaded, _ = self.ollama_service.check_ollama_model_status(vision_model)
+            # if status_callback:
+            #     status_callback("모델 상태 확인 중...")
+            # model_loaded, _ = self.ollama_service.check_ollama_model_status(vision_model)
             
-            if not model_loaded:
-                if status_callback:
-                    status_callback(f"{vision_model} 모델 로드 중...")
-                self.ollama_service.warmup_vision_model(vision_model)
+            # if not model_loaded:
+            #     if status_callback:
+            #         status_callback(f"{vision_model} 모델 로드 중...")
+            #     self.ollama_service.warmup_vision_model(vision_model)
+            logger.info(f"사용할 모델: Vision={vision_model}, Text={text_model}")
+            if status_callback:
+                status_callback(f"번역 준비 중: {vision_model}, {text_model}")
             
             # 파워포인트 파일 열기
             ppt = Presentation(ppt_path)

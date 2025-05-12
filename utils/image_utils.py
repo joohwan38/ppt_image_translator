@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def resize_image_if_needed(image_path, max_size=1024, max_filesize=10*1024*1024):
+def resize_image_if_needed(image_path, max_size=600, max_filesize=2*1024*1024):
     """큰 이미지 리사이징"""
     try:
         # 이미지 크기 확인
