@@ -700,12 +700,15 @@ class PowerPointTranslatorApp:
             messagebox.showinfo("완료", f"번역이 완료되었습니다.\n파일 저장 위치: {output_path}")
             
         except Exception as e:
-            # 오류 발생 시 타이머 중지
             self.timer_running = False
             self.logger.exception(f"번역 프로세스 오류: {str(e)}")
             self.status_label.config(text=f"번역 오류: {str(e)}")
             messagebox.showerror("오류", f"번역 중 오류가 발생했습니다: {str(e)}")
-        
+            
+            # 메모리 정리 추가
+            import gc
+            gc.collect()
+            
         finally:
             self.translation_running = False
             self.timer_running = False

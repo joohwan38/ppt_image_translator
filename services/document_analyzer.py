@@ -10,7 +10,7 @@ class DocumentAnalyzer:
         pass
     
     def analyze_ppt(self, file_path):
-        """PPT 파일 분석"""
+        """PPT 파일 분석 (개선: 텍스트 요소를 문단 단위로 추출)"""
         logger.info(f"문서 분석 시작: {file_path}")
         
         try:
@@ -34,21 +34,23 @@ class DocumentAnalyzer:
                 # 텍스트 요소 분석
                 for shape_idx, shape in enumerate(slide.shapes):
                     try:
-                        # 텍스트 프레임 처리
+                        # 텍스트 프레임 처리 - 개선된 부분: paragraph 단위로 통합 처리
                         if hasattr(shape, "text_frame") and shape.text.strip():
-                            for paragraph in shape.text_frame.paragraphs:
-                                for run in paragraph.runs:
-                                    if run.text.strip():
-                                        text_elements.append({
-                                            'slide_idx': slide_idx,
-                                            'shape_idx': shape_idx,
-                                            'type': 'text_run',
-                                            'text': run.text,
-                                            'translated': False
-                                        })
-                                        total_text_count += 1
+                            # 각 paragraph를 개별 요소로 처리 (run 합치기)
+                            for para_idx, paragraph in enumerate(shape.text_frame.paragraphs):
+                                if paragraph.text.strip():
+                                    # 하나의 paragraph 내 모든 run을 통합
+                                    text_elements.append({
+                                        'slide_idx': slide_idx,
+                                        'shape_idx': shape_idx,
+                                        'para_idx': para_idx,
+                                        'type': 'paragraph',  # text_run 대신 paragraph로 타입 변경
+                                        'text': paragraph.text.strip(),  # 전체 paragraph 텍스트
+                                        'translated': False
+                                    })
+                                    total_text_count += 1
                         
-                        # 테이블 처리
+                        # 테이블 처리 (셀 단위 처리 유지)
                         if hasattr(shape, "table"):
                             table = shape.table
                             for row_idx, row in enumerate(table.rows):
@@ -60,7 +62,7 @@ class DocumentAnalyzer:
                                             'type': 'table_cell',
                                             'row_idx': row_idx,
                                             'col_idx': col_idx,
-                                            'text': cell.text,
+                                            'text': cell.text.strip(),  # 전체 셀 텍스트
                                             'translated': False
                                         })
                                         total_text_count += 1
