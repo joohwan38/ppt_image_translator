@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import base64
+import time
 import os
 from PIL import Image
 import logging
@@ -36,13 +37,21 @@ def resize_image_if_needed(image_path, max_size=1024, max_filesize=10*1024*1024)
         logger.exception(f"이미지 리사이징 오류: {e}")
         return image_path
 
+# utils/image_utils.py 파일의 encode_image_to_base64 함수 수정
 def encode_image_to_base64(image_path):
-    """이미지를 base64로 인코딩"""
+    """이미지를 base64로 인코딩 (시간 측정 추가)"""
     try:
+        encode_start = time.time()
+        
         with open(image_path, "rb") as img_file:
             img_data = img_file.read()
-            logger.info(f"이미지 크기: {len(img_data)} 바이트")
-            return base64.b64encode(img_data).decode('utf-8')
+            img_base64 = base64.b64encode(img_data).decode('utf-8')
+        
+        encode_time = time.time() - encode_start
+        logger.debug(f"이미지 Base64 인코딩 시간: {encode_time:.3f}초")
+        logger.info(f"인코딩된 이미지 크기: {len(img_base64)} 문자")
+        
+        return img_base64
     except Exception as e:
         logger.exception(f"이미지 인코딩 오류: {e}")
         return None
@@ -120,3 +129,32 @@ def overlay_text_on_image(image_path, translated_text):
     except Exception as e:
         logger.exception(f"이미지 오버레이 오류: {e}")
         return image_path
+    
+# utils/image_utils.py 파일에 새 함수 추가
+def process_image_for_vision(image_path):
+    """Vision API를 위한 이미지 전처리 및 인코딩 과정 상세 로깅"""
+    try:
+        # 이미지 크기 확인 시간 측정
+        start_time = time.time()
+        img = Image.open(image_path)
+        img_size = os.path.getsize(image_path)
+        logger.info(f"원본 이미지 크기: {img.width}x{img.height}, {img_size} 바이트")
+        logger.debug(f"이미지 크기 확인 시간: {time.time() - start_time:.3f}초")
+        
+        # 이미지 포맷 확인
+        logger.info(f"이미지 포맷: {img.format}, 모드: {img.mode}")
+        
+        # 인코딩 시간 측정
+        encode_start = time.time()
+        with open(image_path, "rb") as img_file:
+            img_data = img_file.read()
+            img_base64 = base64.b64encode(img_data).decode('utf-8')
+        
+        encode_time = time.time() - encode_start
+        logger.debug(f"이미지 Base64 인코딩 시간: {encode_time:.3f}초")
+        logger.info(f"인코딩된 이미지 크기: {len(img_base64)} 문자")
+        
+        return img_base64
+    except Exception as e:
+        logger.exception(f"이미지 전처리 오류: {e}")
+        return None

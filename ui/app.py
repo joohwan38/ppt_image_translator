@@ -336,6 +336,7 @@ class PowerPointTranslatorApp:
             self.status_label.config(text=f"문서 분석 오류: {str(e)}")
             messagebox.showerror("오류", f"문서 분석 중 오류가 발생했습니다: {str(e)}")
     
+    # ui/app.py 파일의 check_ollama_status 메소드 수정
     def check_ollama_status(self):
         """Ollama 상태 확인"""
         # 설치 확인
@@ -372,7 +373,19 @@ class PowerPointTranslatorApp:
             
             # 최초 실행 시에만 모델 목록 업데이트
             if not self.models_initialized:
-                self.update_models_list()
+                text_models, vision_models = self.update_models_list()
+                
+                # 필요한 모델이 설치되어 있는지 확인
+                if vision_models:
+                    # 새로 추가: Vision 모델 웜업
+                    vision_model = self.vision_model_var.get()
+                    if vision_model and "Vision 모델 없음" not in vision_model:
+                        self.status_label.config(text=f"{vision_model} 모델 로드 중...")
+                        threading.Thread(
+                            target=lambda: self.ollama_service.warmup_vision_model(vision_model),
+                            daemon=True
+                        ).start()
+                
                 self.models_initialized = True
         
         return installed and running
@@ -627,10 +640,13 @@ class PowerPointTranslatorApp:
         self.timer_running = True
         self.update_timer()
         
+        # 디버그 모드 설정 (옵션 - UI에 체크박스 추가 필요)
+        debug_mode = False  # 향후 UI에 체크박스 추가 시 여기서 값 가져오기
+        
         # 번역 스레드 시작
         self.translation_thread = threading.Thread(
             target=self.translation_process,
-            args=(translation_service,)
+            args=(translation_service, debug_mode)
         )
         self.translation_thread.daemon = True
         self.translation_thread.start()
@@ -642,7 +658,7 @@ class PowerPointTranslatorApp:
         self.status_label.config(text="번역 중지 중...")
         self.logger.info("사용자에 의한 번역 중지")
     
-    def translation_process(self, translation_service):
+    def translation_process(self, translation_service, debug_mode=False):
         """번역 프로세스 실행"""
         try:
             # 옵션 가져오기
@@ -653,7 +669,15 @@ class PowerPointTranslatorApp:
             
             self.logger.info(f"번역 설정: {source_lang} → {target_lang}, Vision: {vision_model}, Text: {text_model}")
             
-            # 번역 서비스 호출
+            # 모델 상태 확인 추가
+            self.status_label.config(text="모델 상태 확인 중...")
+            is_loaded, _ = translation_service.ollama_service.check_ollama_model_status(vision_model)
+            
+            if not is_loaded:
+                self.status_label.config(text=f"{vision_model} 모델 로드 중...")
+                translation_service.ollama_service.warmup_vision_model(vision_model)
+            
+            # 번역 서비스 호출 (디버그 모드 전달)
             output_path = translation_service.translate_ppt(
                 self.ppt_path, 
                 source_lang, 
@@ -661,7 +685,8 @@ class PowerPointTranslatorApp:
                 vision_model, 
                 text_model,
                 self.update_progress,
-                self.update_status
+                self.update_status,
+                debug_mode
             )
             
             # 타이머 중지

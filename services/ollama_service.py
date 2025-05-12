@@ -154,30 +154,55 @@ class OllamaService:
             logger.exception(f"모델 목록 가져오기 오류: {e}")
             return [], []
     
+    # services/ollama_service.py 파일 내 extract_text_from_image 메소드 수정
     def extract_text_from_image(self, image_base64, model_name):
-        """Vision 모델을 사용하여 이미지에서 텍스트 추출"""
+        """Vision 모델을 사용하여 이미지에서 텍스트 추출 (시간 측정 추가)"""
         try:
-            logger.info("Vision API 호출 시작")
-            start_time = time.time()
+            # 단계 1: API 요청 준비 시간 측정
+            prep_start = time.time()
             
-            response = requests.post(
+            # API 요청 JSON 준비
+            request_data = {
+                "model": model_name,
+                "prompt": "Extract all visible text from this image. Only return the text, nothing else.",
+                "images": [image_base64]
+            }
+            
+            prep_end = time.time()
+            logger.debug(f"API 요청 준비 시간: {prep_end - prep_start:.3f}초")
+            
+            # 단계 2: 네트워크 연결 및 요청 전송 시간 측정
+            conn_start = time.time()
+            logger.info(f"Vision API 호출 시작: {model_name}")
+            
+            # 연결 타임아웃과 읽기 타임아웃 분리
+            session = requests.Session()
+            response = session.post(
                 f"{self.url}/api/generate",
-                json={
-                    "model": model_name,
-                    "prompt": "Extract all visible text from this image. Only return the text, nothing else.",
-                    "images": [image_base64]
-                },
-                timeout=60  # 60초 타임아웃 설정
+                json=request_data,
+                timeout=(10, 120)  # (연결 타임아웃 10초, 읽기 타임아웃 120초)
             )
             
-            elapsed = time.time() - start_time
-            logger.info(f"Vision API 응답 수신: {elapsed:.2f}초 소요")
+            conn_end = time.time()
+            logger.debug(f"API 요청 전송 및 응답 수신 시간: {conn_end - conn_start:.3f}초")
             
+            # 응답 처리
             if response.status_code == 200:
+                # 단계 3: 응답 처리 시간 측정
+                process_start = time.time()
+                
                 result = response.json()
                 if 'response' in result:
                     extracted_text = result['response'].strip()
                     logger.info(f"추출된 텍스트 길이: {len(extracted_text)} 글자")
+                    
+                    process_end = time.time()
+                    logger.debug(f"응답 처리 시간: {process_end - process_start:.3f}초")
+                    
+                    # 전체 소요 시간 기록
+                    total_time = process_end - prep_start
+                    logger.info(f"텍스트 추출 전체 소요 시간: {total_time:.3f}초")
+                    
                     return extracted_text
                 else:
                     logger.error(f"API 응답에 'response' 필드 없음: {result}")
@@ -186,15 +211,80 @@ class OllamaService:
                 logger.error(f"Vision API 오류 (HTTP {response.status_code}): {response.text}")
                 return ""
                 
-        except requests.exceptions.Timeout:
-            logger.error("Vision API 호출 타임아웃")
+        except requests.exceptions.ConnectTimeout:
+            logger.error("Vision API 연결 타임아웃 (서버 연결 실패)")
             return ""
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON 파싱 오류: {e}")
+        except requests.exceptions.ReadTimeout:
+            logger.error("Vision API 읽기 타임아웃 (응답 대기 시간 초과)")
             return ""
         except Exception as e:
             logger.exception(f"텍스트 추출 오류: {e}")
             return ""
+
+    # services/ollama_service.py 파일에 새 메소드 추가
+    def check_ollama_model_status(self, model_name):
+        """Ollama 모델 상태 확인 (로드 여부, 메모리 사용량 등)"""
+        try:
+            response = requests.get(f"{self.url}/api/show", 
+                                params={"name": model_name},
+                                timeout=5)
+            
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"모델 상태: {data}")
+                
+                # 모델이 이미 로드되었는지 확인
+                if "modelfile" in data:
+                    logger.info(f"모델 {model_name} 로드됨")
+                    return True, data
+                else:
+                    logger.warning(f"모델 {model_name} 아직 로드되지 않음")
+                    return False, data
+            else:
+                logger.error(f"모델 상태 확인 실패: {response.status_code}")
+                return False, None
+        except Exception as e:
+            logger.exception(f"모델 상태 확인 오류: {e}")
+            return False, None
+        
+    # services/ollama_service.py 파일에 새 메소드 추가
+    def warmup_vision_model(self, model_name):
+        """비전 모델 사전 로드 및 웜업"""
+        logger.info(f"모델 {model_name} 웜업 시작")
+        
+        try:
+            # 간단한 테스트 이미지 생성 (1x1 픽셀 투명 이미지)
+            from PIL import Image
+            import io
+            
+            test_img = Image.new('RGBA', (1, 1), (255, 255, 255, 0))
+            img_byte = io.BytesIO()
+            test_img.save(img_byte, format='PNG')
+            img_byte.seek(0)
+            
+            test_base64 = base64.b64encode(img_byte.read()).decode('utf-8')
+            
+            # 웜업 요청 (짧은 타임아웃으로 실제 응답은 기다리지 않음)
+            logger.info("웜업 요청 전송")
+            try:
+                requests.post(
+                    f"{self.url}/api/generate",
+                    json={
+                        "model": model_name,
+                        "prompt": "Warmup request",
+                        "images": [test_base64]
+                    },
+                    timeout=2
+                )
+            except requests.exceptions.Timeout:
+                # 타임아웃은 예상된 결과 - 모델 로드만 되면 됨
+                logger.info("웜업 요청 타임아웃 (정상)")
+            
+            logger.info(f"모델 {model_name} 웜업 완료")
+            return True
+        except Exception as e:
+            logger.exception(f"모델 웜업 오류: {e}")
+            return False
     
     def translate_text(self, text, source_lang, target_lang, model):
         """Text 모델을 사용하여 텍스트 번역"""
