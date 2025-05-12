@@ -4,7 +4,6 @@ import numpy as np
 import os
 import logging
 from PIL import Image, ImageDraw, ImageFont
-import pytesseract
 
 from config import MAX_IMAGE_SIZE, MAX_IMAGE_FILESIZE, OCR_LANG_MAPPING
 
@@ -67,7 +66,7 @@ def is_numeric_text(text):
     except ValueError:
         return False
 
-def get_multilingual_font(font_size=14):
+def get_multilingual_font(font_size=24):
     """다국어를 지원하는 폰트 가져오기"""
     # 프로젝트 루트 기준 폰트 경로 계산
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -116,7 +115,7 @@ def get_multilingual_font(font_size=14):
     return ImageFont.load_default()
 
 def overlay_text_on_image(image_path, translated_text, source_lang=None):
-    """이미지의 텍스트를 번역된 텍스트로 정확히 대체 (OCR 기반)"""
+    """이미지의 텍스트를 번역된 텍스트로 정확히 대체 (PIL 사용)"""
     try:
         # OCR 언어 설정
         ocr_lang = 'eng'  # 기본값
@@ -124,49 +123,55 @@ def overlay_text_on_image(image_path, translated_text, source_lang=None):
             ocr_lang_list = OCR_LANG_MAPPING[source_lang]
             ocr_lang = '+'.join(ocr_lang_list)
         
-        # 이미지 로드
-        img = cv2.imread(image_path)
-        if img is None:
-            logger.error(f"이미지 로드 실패: {image_path}")
-            return image_path
+        # 이미지 로드 (PIL 사용)
+        pil_img = Image.open(image_path)
         
-        # OCR 수행 (텍스트 블록 감지)
-        custom_config = r'--oem 3 --psm 11'
-        boxes = pytesseract.image_to_boxes(img, lang=ocr_lang, config=custom_config)
+        # OCR 수행 (텍스트 블록 감지) - 이 부분은 그대로 pytesseract 사용
+        try:
+            import pytesseract
+            boxes = pytesseract.image_to_boxes(np.array(pil_img), lang=ocr_lang, config=r'--oem 3 --psm 11')
+        except Exception as e:
+            logger.error(f"OCR 오류: {e}")
+            boxes = None
         
         # 결과 없는 경우 다른 방식 시도
         if not boxes or len(boxes.strip()) == 0:
             return basic_overlay_text(image_path, translated_text)
         
-        # 텍스트 구역 찾기 - 응용 방법
-        h, w = img.shape[:2]
+        # 이미지 크기
+        width, height = pil_img.size
         
-        # 텍스트 영역 지우기 (흰색 배경)
-        overlay = img.copy()
-        cv2.rectangle(overlay, (0, 0), (w, int(h * 0.2)), (255, 255, 255), -1)
+        # PIL로 새 이미지 준비 (그림 그리기용)
+        draw = ImageDraw.Draw(pil_img)
         
-        # 반투명 오버레이
-        alpha = 0.8
-        cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
+        # 폰트 로드 - 더 큰 글자 크기 사용(24pt)
+        font = get_multilingual_font(24)
         
         # 텍스트 분할
         lines = translated_text.split('\n')
         
-        # 폰트 설정
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.7
-        thickness = 1
-        line_height = 30
+        # 텍스트 영역 지우기 (상단 부분에 흰색 배경)
+        text_height = len(lines) * 30 + 20  # 각 줄 30픽셀, 위아래 여백 20픽셀
+        overlay_height = min(int(height * 0.3), text_height)  # 이미지 높이의 최대 30%까지 사용
+        
+        # 반투명 흰색 배경 그리기 (완전 흰색 대신 약간 투명하게)
+        overlay = Image.new('RGBA', (width, overlay_height), (255, 255, 255, 220))
+        pil_img.paste(overlay, (0, 0), overlay)
         
         # 텍스트 렌더링
-        for i, line in enumerate(lines):
-            y = 30 + i * line_height
-            if y < h * 0.8:  # 이미지 하단 80%까지만 사용
-                cv2.putText(img, line, (10, y), font, font_scale, (0, 0, 0), thickness)
+        y_offset = 10  # 상단 여백
+        for line in lines:
+            # 각 줄의 너비 계산
+            text_width = font.getlength(line)
+            # 텍스트 중앙 정렬
+            x_pos = (width - text_width) / 2
+            # 텍스트 그리기 (검정색)
+            draw.text((x_pos, y_offset), line, font=font, fill=(0, 0, 0))
+            y_offset += 30  # 다음 줄로 이동
         
         # 결과 저장
         output_path = f"translated_{os.path.basename(image_path)}"
-        cv2.imwrite(output_path, img)
+        pil_img.save(output_path)
         logger.info(f"번역된 이미지 저장: {output_path}")
         return output_path
     
@@ -175,24 +180,23 @@ def overlay_text_on_image(image_path, translated_text, source_lang=None):
         return basic_overlay_text(image_path, translated_text)
 
 def basic_overlay_text(image_path, translated_text):
-    """기본 텍스트 오버레이 방식 - OCR 실패 시 대체용"""
+    """기본 텍스트 오버레이 방식 - PIL 사용"""
     try:
-        img = cv2.imread(image_path)
-        if img is None:
-            logger.error(f"이미지 로드 실패: {image_path}")
-            return image_path
+        # PIL로 이미지 열기
+        pil_img = Image.open(image_path)
+        width, height = pil_img.size
         
-        # 이미지 크기 및 오버레이 설정
-        h, w = img.shape[:2]
-        overlay = img.copy()
-        bg_color = (255, 255, 255)  # 흰색
-        alpha = 0.85  # 투명도
+        # 그리기 객체 생성
+        draw = ImageDraw.Draw(pil_img)
         
-        # 텍스트 분할
+        # 폰트 가져오기 (더 큰 글자 크기 사용)
+        font = get_multilingual_font(24)
+        
+        # 텍스트 줄 분할
         lines = []
         words = translated_text.split()
         line = ""
-        max_line_length = min(50, w // 10)  # 이미지 폭에 따라 동적 조정
+        max_line_length = 50  # 최대 50자 (대략적인 수치)
         
         for word in words:
             test_line = line + " " + word if line else word
@@ -205,34 +209,29 @@ def basic_overlay_text(image_path, translated_text):
         if line:
             lines.append(line)
         
-        # 텍스트 렌더링 설정
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = max(0.6, min(0.8, w / 500))  # 이미지 크기에 따라 폰트 크기 조정
-        thickness = 1
-        line_height = max(25, int(h / 20))  # 이미지 높이에 따라 조정
-        
-        # 텍스트 배경 및 내용 렌더링 (상단에 위치하도록)
-        text_height = len(lines) * line_height
+        # 텍스트 배경 영역 계산
+        line_height = 30
+        text_height = len(lines) * line_height + 20  # 위아래 여백 20픽셀
         padding = 10
         
-        # 배경 텍스트 영역 확장
-        cv2.rectangle(overlay, (0, 0), 
-                    (w, text_height + padding * 2), 
-                    bg_color, -1)
-        
-        cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
+        # 반투명 흰색 배경 생성
+        overlay = Image.new('RGBA', (width, text_height), (255, 255, 255, 220))
+        pil_img.paste(overlay, (0, 0), overlay)
         
         # 텍스트 렌더링
-        for i, line in enumerate(lines):
-            y = padding + (i + 1) * line_height
-            # 그림자
-            cv2.putText(img, line, (padding + 1, y + 1), font, font_scale, (100, 100, 100), thickness)
-            # 실제 텍스트
-            cv2.putText(img, line, (padding, y), font, font_scale, (0, 0, 0), thickness)
+        y_offset = padding
+        for line in lines:
+            # 각 줄의 너비 계산
+            text_width = font.getlength(line)
+            # 텍스트 중앙 정렬
+            x_pos = (width - text_width) / 2
+            # 텍스트 그리기 (검정색)
+            draw.text((x_pos, y_offset), line, font=font, fill=(0, 0, 0))
+            y_offset += line_height
         
         # 결과 저장
         output_path = f"basic_translated_{os.path.basename(image_path)}"
-        cv2.imwrite(output_path, img)
+        pil_img.save(output_path)
         logger.info(f"기본 오버레이 이미지 저장: {output_path}")
         return output_path
     except Exception as e:
