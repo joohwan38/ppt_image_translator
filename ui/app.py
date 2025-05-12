@@ -5,6 +5,9 @@ from tkinter import filedialog, ttk, messagebox
 import threading
 import webbrowser
 import logging
+import platform
+import subprocess
+import gc
 
 from utils.logging_utils import setup_logging, TextHandler
 from services.ollama_service import OllamaService
@@ -21,6 +24,9 @@ class PowerPointTranslatorApp:
         self.root = root
         self.root.title("Powerpoint Image Translator")
         self.root.geometry("850x900")
+        
+        # OCR 초기화
+        self.tesseract_available = self.check_tesseract_installation()
         
         # 모델 초기화 상태 추적
         self.models_initialized = False
@@ -57,6 +63,154 @@ class PowerPointTranslatorApp:
         # 초기 상태 확인
         self.check_ollama_status()
         
+    def check_tesseract_installation(self):
+        """Tesseract OCR 설치 확인"""
+        try:
+            import pytesseract
+            import platform
+            import os
+            
+            # 시스템 확인
+            system = platform.system()
+            
+            if system == "Windows":
+                # Windows 테서렉트 경로 후보
+                tesseract_paths = [
+                    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+                    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+                ]
+                
+                for path in tesseract_paths:
+                    if os.path.exists(path):
+                        pytesseract.pytesseract.tesseract_cmd = path
+                        self.logger.info(f"Tesseract OCR 경로 설정: {path}")
+                        
+                        # 데이터 경로 설정
+                        tessdata_path = os.path.join(os.path.dirname(path), "tessdata")
+                        if os.path.exists(tessdata_path):
+                            os.environ['TESSDATA_PREFIX'] = tessdata_path
+                            self.logger.info(f"언어 데이터 경로 설정: {tessdata_path}")
+                            
+                            # 한국어 데이터 확인
+                            if os.path.exists(os.path.join(tessdata_path, "kor.traineddata")):
+                                self.logger.info("한국어 언어 데이터 확인됨")
+                            else:
+                                self.logger.warning("한국어 언어 데이터가 없습니다")
+                        return True
+                
+                # 설치 안 된 경우 메시지 표시
+                self.logger.warning("Tesseract OCR이 설치되지 않았습니다.")
+                if messagebox.askyesno("Tesseract OCR 설치 필요", 
+                                    "이미지 텍스트 번역 기능을 위해 Tesseract OCR이 필요합니다. 설치 페이지로 이동하시겠습니까?"):
+                    webbrowser.open("https://github.com/UB-Mannheim/tesseract/wiki")
+                return False
+                
+            elif system == "Darwin":  # macOS
+                # macOS 경로 후보
+                tesseract_paths = [
+                    "/opt/homebrew/bin/tesseract",
+                    "/usr/local/bin/tesseract"
+                ]
+                
+                for path in tesseract_paths:
+                    if os.path.exists(path):
+                        # 테서렉트 경로 설정
+                        pytesseract.pytesseract.tesseract_cmd = path
+                        self.logger.info(f"Tesseract OCR 경로 설정: {path}")
+                        
+                        # 데이터 경로 추측 (Homebrew 또는 기본 경로)
+                        if 'homebrew' in path:
+                            tessdata_path = "/opt/homebrew/share/tessdata/"
+                        else:
+                            tessdata_path = "/usr/local/share/tessdata/"
+                        
+                        if os.path.exists(tessdata_path):
+                            os.environ['TESSDATA_PREFIX'] = tessdata_path
+                            self.logger.info(f"언어 데이터 경로 설정: {tessdata_path}")
+                            
+                            # 한국어 데이터 확인
+                            if os.path.exists(os.path.join(tessdata_path, "kor.traineddata")):
+                                self.logger.info("한국어 언어 데이터 확인됨")
+                            else:
+                                self.logger.warning("한국어 언어 데이터가 없습니다")
+                                self.prompt_install_korean_data(tessdata_path)
+                        return True
+                
+                # 설치 안 된 경우 안내
+                self.logger.warning("Tesseract OCR이 설치되지 않았습니다.")
+                if messagebox.askyesno("Tesseract OCR 설치 필요", 
+                                    "이미지 텍스트 번역 기능을 위해 Tesseract OCR이 필요합니다. 설치 안내를 보시겠습니까?"):
+                    messagebox.showinfo("설치 안내", "터미널에서 다음 명령어를 실행하세요: brew install tesseract tesseract-lang")
+                return False
+                
+            else:  # Linux
+                # Linux 확인
+                result = subprocess.run(["tesseract", "--version"], capture_output=True, text=True)
+                if result.returncode == 0:
+                    self.logger.info("Tesseract OCR 설치 확인됨")
+                    
+                    # 데이터 경로 확인
+                    tessdata_paths = [
+                        "/usr/share/tessdata/",
+                        "/usr/local/share/tessdata/"
+                    ]
+                    
+                    for path in tessdata_paths:
+                        if os.path.exists(path):
+                            os.environ['TESSDATA_PREFIX'] = path
+                            self.logger.info(f"언어 데이터 경로 설정: {path}")
+                            
+                            # 한국어 데이터 확인
+                            if os.path.exists(os.path.join(path, "kor.traineddata")):
+                                self.logger.info("한국어 언어 데이터 확인됨")
+                            else:
+                                self.logger.warning("한국어 언어 데이터가 없습니다")
+                            break
+                    
+                    return True
+                else:
+                    self.logger.warning("Tesseract OCR이 설치되지 않았습니다.")
+                    if messagebox.askyesno("Tesseract OCR 설치 필요", 
+                                        "이미지 텍스트 번역 기능을 위해 Tesseract OCR이 필요합니다. 설치 안내를 보시겠습니까?"):
+                        messagebox.showinfo("설치 안내", "터미널에서 다음 명령어를 실행하세요: sudo apt-get install tesseract-ocr tesseract-ocr-all")
+                    return False
+        
+        except ImportError:
+            self.logger.warning("pytesseract 모듈이 설치되지 않았습니다.")
+            if messagebox.askyesno("pytesseract 모듈 설치 필요", 
+                                "이미지 텍스트 번역 기능을 위해 pytesseract 모듈이 필요합니다. 설치하시겠습니까?"):
+                try:
+                    subprocess.run([sys.executable, "-m", "pip", "install", "pytesseract"], check=True)
+                    self.logger.info("pytesseract 모듈 설치 완료")
+                    # 설치 후 다시 확인
+                    return self.check_tesseract_installation()
+                except Exception as e:
+                    self.logger.error(f"pytesseract 모듈 설치 오류: {e}")
+                    messagebox.showerror("설치 오류", f"pytesseract 모듈 설치 중 오류가 발생했습니다: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Tesseract OCR 확인 오류: {e}")
+            return False
+
+    def prompt_install_korean_data(self, tessdata_path):
+        """한국어 데이터 설치 안내"""
+        response = messagebox.askquestion(
+            "한국어 언어 데이터 필요",
+            "한국어 OCR을 위한 언어 데이터가 없습니다. 설치하시겠습니까?",
+            icon='info'
+        )
+        
+        if response == 'yes':
+            if platform.system() == "Darwin":  # macOS
+                messagebox.showinfo("설치 안내", "터미널에서 다음 명령어를 실행하세요: brew install tesseract-lang")
+            elif platform.system() == "Windows":
+                # 한국어 데이터 다운로드 URL 열기
+                webbrowser.open("https://github.com/tesseract-ocr/tessdata/raw/main/kor.traineddata")
+                messagebox.showinfo("설치 안내", 
+                                f"다운로드된 kor.traineddata 파일을 다음 경로에 복사하세요: {tessdata_path}")
+            else:  # Linux
+                messagebox.showinfo("설치 안내", "터미널에서 다음 명령어를 실행하세요: sudo apt-get install tesseract-ocr-kor")
+    
     def init_ui(self):
         """UI 구성 요소 초기화"""
         # 상단 프레임 (로고와 제목을 위한 프레임)
@@ -162,10 +316,16 @@ class PowerPointTranslatorApp:
         self.ollama_port_label = tk.Label(self.ollama_status_frame, text="Ollama 포트: 확인 중...")
         self.ollama_port_label.grid(row=2, column=0, sticky="w", pady=2)
         
+        # Tesseract 상태 추가
+        self.tesseract_label = tk.Label(self.ollama_status_frame, 
+                                      text=f"Tesseract OCR: {'설치됨' if self.tesseract_available else '설치되지 않음'}",
+                                      fg="green" if self.tesseract_available else "red")
+        self.tesseract_label.grid(row=3, column=0, sticky="w", pady=2)
+        
         # Ollama 상태 확인 버튼
         self.check_ollama_button = tk.Button(self.ollama_status_frame, text="상태 확인", 
                                           command=self.check_ollama_status)
-        self.check_ollama_button.grid(row=0, column=1, rowspan=3, padx=20)
+        self.check_ollama_button.grid(row=0, column=1, rowspan=4, padx=20)
         
         # 번역 옵션 프레임
         self.options_frame = tk.LabelFrame(self.root, text="번역 옵션", padx=10, pady=10)
@@ -219,6 +379,23 @@ class PowerPointTranslatorApp:
         self.url_var = tk.StringVar(value="http://localhost:11434")
         self.url_entry = tk.Entry(self.options_frame, textvariable=self.url_var, width=40)
         self.url_entry.grid(row=2, column=1, columnspan=4, padx=10, pady=10, sticky="ew")
+        
+        # 이미지 처리 옵션 추가
+        self.img_process_frame = tk.Frame(self.options_frame)
+        self.img_process_frame.grid(row=3, column=0, columnspan=5, padx=10, pady=5, sticky="w")
+        
+        # OCR 사용 여부 체크박스
+        self.use_ocr_var = tk.BooleanVar(value=self.tesseract_available)
+        self.use_ocr_check = tk.Checkbutton(self.img_process_frame, text="OCR 사용 (텍스트 정확한 위치 감지)", 
+                                          variable=self.use_ocr_var,
+                                          state=tk.NORMAL if self.tesseract_available else tk.DISABLED)
+        self.use_ocr_check.pack(side=tk.LEFT, padx=10)
+        
+        # 메모리 최적화 체크박스
+        self.optimize_memory_var = tk.BooleanVar(value=True)
+        self.optimize_memory_check = tk.Checkbutton(self.img_process_frame, text="메모리 최적화", 
+                                                 variable=self.optimize_memory_var)
+        self.optimize_memory_check.pack(side=tk.LEFT, padx=20)
         
         # 번역 시작/중지 버튼
         self.buttons_frame = tk.Frame(self.root)
@@ -335,8 +512,10 @@ class PowerPointTranslatorApp:
             self.total_elements_label.config(text="총 번역 요소: 오류 발생")
             self.status_label.config(text=f"문서 분석 오류: {str(e)}")
             messagebox.showerror("오류", f"문서 분석 중 오류가 발생했습니다: {str(e)}")
+            
+            # 메모리 정리
+            gc.collect()
     
-    # ui/app.py 파일의 check_ollama_status 메소드 수정
     def check_ollama_status(self):
         """Ollama 상태 확인"""
         # 설치 확인
@@ -374,18 +553,6 @@ class PowerPointTranslatorApp:
             # 최초 실행 시에만 모델 목록 업데이트
             if not self.models_initialized:
                 text_models, vision_models = self.update_models_list()
-                
-                # 필요한 모델이 설치되어 있는지 확인
-                # if vision_models:
-                    # 새로 추가: Vision 모델 웜업
-                    # vision_model = self.vision_model_var.get()
-                    # if vision_model and "Vision 모델 없음" not in vision_model:
-                    #     self.status_label.config(text=f"{vision_model} 모델 로드 중...")
-                    #     threading.Thread(
-                    #         target=lambda: self.ollama_service.warmup_vision_model(vision_model),
-                    #         daemon=True
-                    #     ).start()
-                
                 self.models_initialized = True
         
         return installed and running
@@ -399,7 +566,6 @@ class PowerPointTranslatorApp:
         )
         
         if response == 'yes':
-            import webbrowser
             webbrowser.open("https://ollama.com/download")
     
     def update_models_list(self):
@@ -446,6 +612,9 @@ class PowerPointTranslatorApp:
             self.text_model_combo['values'] = ["Text 모델 없음"]
             self.text_model_var.set("Text 모델 없음")
             
+            # 메모리 정리
+            gc.collect()
+            
             return [], []
     
     def prompt_install_base_models(self):
@@ -489,6 +658,9 @@ class PowerPointTranslatorApp:
         except Exception as e:
             self.status_label.config(text=f"모델 설치 오류: {str(e)}")
             messagebox.showerror("설치 오류", f"모델 설치 중 오류가 발생했습니다: {str(e)}")
+            
+            # 메모리 정리
+            gc.collect()
     
     def format_time(self, seconds):
         """초를 분:초 형식으로 변환"""
@@ -549,6 +721,10 @@ class PowerPointTranslatorApp:
         self.remaining_items_label.config(text=f"남은 요소: {total - current}")
         
         self.root.update_idletasks()
+        
+        # 메모리 최적화 옵션이 켜져 있으면 주기적으로 GC 실행
+        if self.optimize_memory_var.get() and current % 10 == 0:
+            gc.collect()
     
     def update_status(self, status_text):
         """상태 메시지 업데이트"""
@@ -590,7 +766,7 @@ class PowerPointTranslatorApp:
         if "Text 모델 없음" in text_model:
             response = messagebox.askquestion(
                 "Text 모델 없음",
-                "텍스트 번역을 위한 모델이 없습니다. Text 모델을.설치한 후 다시 시도하시겠습니까?",
+                "텍스트 번역을 위한 모델이 없습니다. Text 모델을 설치한 후 다시 시도하시겠습니까?",
                 icon='warning'
             )
             if response == 'yes':
@@ -640,13 +816,14 @@ class PowerPointTranslatorApp:
         self.timer_running = True
         self.update_timer()
         
-        # 디버그 모드 설정 (옵션 - UI에 체크박스 추가 필요)
-        debug_mode = False  # 향후 UI에 체크박스 추가 시 여기서 값 가져오기
+        # 번역 옵션 설정
+        use_ocr = self.use_ocr_var.get()
+        optimize_memory = self.optimize_memory_var.get()
         
         # 번역 스레드 시작
         self.translation_thread = threading.Thread(
             target=self.translation_process,
-            args=(translation_service, debug_mode)
+            args=(translation_service, use_ocr, optimize_memory)
         )
         self.translation_thread.daemon = True
         self.translation_thread.start()
@@ -658,8 +835,10 @@ class PowerPointTranslatorApp:
         self.status_label.config(text="번역 중지 중...")
         self.logger.info("사용자에 의한 번역 중지")
     
-    def translation_process(self, translation_service, debug_mode=False):
+    def translation_process(self, translation_service, use_ocr=False, optimize_memory=True):
         """번역 프로세스 실행"""
+        output_path = None
+        
         try:
             # 옵션 가져오기
             source_lang = self.source_lang.get()
@@ -668,16 +847,16 @@ class PowerPointTranslatorApp:
             text_model = self.text_model_var.get()
             
             self.logger.info(f"번역 설정: {source_lang} → {target_lang}, Vision: {vision_model}, Text: {text_model}")
+            self.logger.info(f"번역 옵션: OCR 사용: {use_ocr}, 메모리 최적화: {optimize_memory}")
             
-            # 모델 상태 확인 추가
-            # self.status_label.config(text="모델 상태 확인 중...")
-            # is_loaded, _ = translation_service.ollama_service.check_ollama_model_status(vision_model)
+            # 추가 옵션을 딕셔너리로 전달
+            options = {
+                "use_ocr": use_ocr,
+                "optimize_memory": optimize_memory,
+                "source_lang": source_lang  # OCR 언어 힌트로 사용
+            }
             
-            # if not is_loaded:
-            #     self.status_label.config(text=f"{vision_model} 모델 로드 중...")
-            #     translation_service.ollama_service.warmup_vision_model(vision_model)
-            
-            # 번역 서비스 호출 (디버그 모드 전달)
+            # 번역 서비스 호출
             output_path = translation_service.translate_ppt(
                 self.ppt_path, 
                 source_lang, 
@@ -686,31 +865,68 @@ class PowerPointTranslatorApp:
                 text_model,
                 self.update_progress,
                 self.update_status,
-                debug_mode
+                options
             )
             
             # 타이머 중지
             self.timer_running = False
             
-            # 완료 메시지
+            # 완료 메시지 - 메인 스레드에서 실행하기 위해 after 메서드 사용
             elapsed_time = time.time() - self.start_time
-            self.progress_label.config(text=f"100% (총 소요시간: {self.format_time(elapsed_time)})")
-            self.status_label.config(text=f"번역 완료! 파일 저장됨: {output_path}")
-            self.logger.info(f"번역 완료: 소요시간 {elapsed_time:.2f}초")
-            messagebox.showinfo("완료", f"번역이 완료되었습니다.\n파일 저장 위치: {output_path}")
+            final_elapsed_time = elapsed_time  # 로컬 변수로 복사
+            
+            # 메인 스레드에서 메시지 박스 표시
+            self.root.after(0, lambda: self.show_completion_message(output_path, final_elapsed_time))
             
         except Exception as e:
+            # 타이머 중지
             self.timer_running = False
             self.logger.exception(f"번역 프로세스 오류: {str(e)}")
-            self.status_label.config(text=f"번역 오류: {str(e)}")
-            messagebox.showerror("오류", f"번역 중 오류가 발생했습니다: {str(e)}")
             
-            # 메모리 정리 추가
-            import gc
+            # 오류 메시지 - 메인 스레드에서 실행
+            error_msg = str(e)
+            self.root.after(0, lambda: self.show_error_message(error_msg))
+            
+            # 메모리 정리
             gc.collect()
             
         finally:
             self.translation_running = False
             self.timer_running = False
-            self.start_button.config(state=tk.NORMAL)
-            self.stop_button.config(state=tk.DISABLED)
+            
+            # 버튼 상태 변경 - 메인 스레드에서 실행
+            self.root.after(0, self.reset_ui_after_translation)
+            
+            # 최종 메모리 정리
+            gc.collect()
+
+    def show_completion_message(self, output_path, elapsed_time):
+        """번역 완료 메시지 표시 (메인 스레드에서 실행)"""
+        self.progress_label.config(text=f"100% (총 소요시간: {self.format_time(elapsed_time)})")
+        self.status_label.config(text=f"번역 완료! 파일 저장됨: {output_path}")
+        self.logger.info(f"번역 완료: 소요시간 {elapsed_time:.2f}초")
+        
+        # 결과 파일 열기 옵션 제공
+        if messagebox.askyesno("완료", f"번역이 완료되었습니다.\n파일 저장 위치: {output_path}\n\n파일을 열어보시겠습니까?"):
+            try:
+                if platform.system() == "Windows":
+                    os.startfile(output_path)
+                elif platform.system() == "Darwin":  # macOS
+                    subprocess.run(["open", output_path])
+                else:  # Linux
+                    subprocess.run(["xdg-open", output_path])
+            except Exception as e:
+                self.logger.error(f"파일 열기 오류: {e}")
+                messagebox.showwarning("경고", f"파일을 열 수 없습니다: {e}")
+        else:
+            messagebox.showinfo("완료", f"번역이 완료되었습니다.\n파일 저장 위치: {output_path}")
+
+    def show_error_message(self, error_msg):
+        """오류 메시지 표시 (메인 스레드에서 실행)"""
+        self.status_label.config(text=f"번역 오류: {error_msg}")
+        messagebox.showerror("오류", f"번역 중 오류가 발생했습니다: {error_msg}")
+
+    def reset_ui_after_translation(self):
+        """번역 후 UI 상태 초기화 (메인 스레드에서 실행)"""
+        self.start_button.config(state=tk.NORMAL)
+        self.stop_button.config(state=tk.DISABLED)

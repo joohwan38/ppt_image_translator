@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "numpy>=2.2.5",
     "opencv-python>=4.11.0.86",
     "pillow>=11.2.1",
     "psutil>=7.0.0",

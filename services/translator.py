@@ -202,6 +202,112 @@ class TranslationService:
                 current = processed_items + idx + 1
                 progress_callback(current, total_elements)
     
+    def _translate_text_elements(self, ppt, text_elements, source_lang, target_lang, text_model, 
+                            progress_callback=None, processed_items=0, total_elements=0):
+        """텍스트 요소 번역 처리"""
+        for idx, text_element in enumerate(text_elements):
+            slide_idx = text_element['slide_idx']
+            slide = ppt.slides[slide_idx]
+            
+            try:
+                # 문단(paragraph) 번역 처리 (서식 유지)
+                if text_element['type'] == 'paragraph':
+                    logger.info(f"문단 번역 (슬라이드 {slide_idx+1}, 요소 {text_element['shape_idx']}): '{text_element['text'][:30]}...'")
+                    
+                    shape = slide.shapes[text_element['shape_idx']]
+                    paragraph = shape.text_frame.paragraphs[text_element['para_idx']]
+                    
+                    if paragraph.text.strip() == text_element['text']:
+                        if self.is_numeric_text(paragraph.text):
+                            logger.info(f"숫자 텍스트 감지됨, 번역 건너뜀: '{paragraph.text}'")
+                            text_element['translated'] = True
+                        else:
+                            translated_text = self.ollama_service.translate_text(
+                                paragraph.text, source_lang, target_lang, text_model
+                            )
+                            
+                            # 서식 유지를 위한 처리 - 중요 변경 사항
+                            if len(paragraph.runs) > 0:
+                                # 첫 번째 run에 번역된 텍스트 설정
+                                first_run = paragraph.runs[0]
+                                first_run.text = translated_text
+                                
+                                # 나머지 run 제거 (첫 번째 run의 서식은 유지됨)
+                                while len(paragraph.runs) > 1:
+                                    paragraph._p.remove(paragraph.runs[1]._r)
+                            else:
+                                # run이 없는 경우 직접 텍스트 설정
+                                paragraph.text = translated_text
+                            
+                            text_element['translated'] = True
+                
+                # 테이블 셀 번역 처리 (서식 유지)
+                elif text_element['type'] == 'table_cell':
+                    logger.info(f"테이블 셀 번역 (슬라이드 {slide_idx+1}, 요소 {text_element['shape_idx']}): '{text_element['text'][:30]}...'")
+                    
+                    shape = slide.shapes[text_element['shape_idx']]
+                    if hasattr(shape, "table"):
+                        table = shape.table
+                        cell = table.rows[text_element['row_idx']].cells[text_element['col_idx']]
+                        
+                        if cell.text.strip() == text_element['text']:
+                            if self.is_numeric_text(cell.text):
+                                logger.info(f"숫자 텍스트 감지됨, 번역 건너뜀: '{cell.text}'")
+                                text_element['translated'] = True
+                            else:
+                                translated_text = self.ollama_service.translate_text(
+                                    cell.text, source_lang, target_lang, text_model
+                                )
+                                
+                                # 서식 유지를 위한 처리 - 중요 변경 사항
+                                text_frame = cell.text_frame
+                                if text_frame.paragraphs and len(text_frame.paragraphs[0].runs) > 0:
+                                    # 첫 번째 paragraph의 첫 번째 run에 번역된 텍스트 설정
+                                    first_run = text_frame.paragraphs[0].runs[0]
+                                    first_run.text = translated_text
+                                    
+                                    # 첫 번째 paragraph의 나머지 run 제거
+                                    while len(text_frame.paragraphs[0].runs) > 1:
+                                        text_frame.paragraphs[0]._p.remove(text_frame.paragraphs[0].runs[1]._r)
+                                    
+                                    # 첫 번째 이외의 paragraph 제거
+                                    while len(text_frame.paragraphs) > 1:
+                                        text_frame._txBody.remove(text_frame._txBody[1])
+                                else:
+                                    # run이 없는 경우 직접 텍스트 설정
+                                    if text_frame.paragraphs:
+                                        text_frame.paragraphs[0].text = translated_text
+                                
+                                text_element['translated'] = True
+                
+                # text_run 처리 (이전 방식)
+                elif text_element['type'] == 'text_run':
+                    logger.info(f"텍스트 번역 (슬라이드 {slide_idx+1}, 요소 {text_element['shape_idx']}): '{text_element['text'][:30]}...'")
+                    
+                    shape = slide.shapes[text_element['shape_idx']]
+                    for paragraph in shape.text_frame.paragraphs:
+                        for run in paragraph.runs:
+                            if run.text.strip() == text_element['text']:
+                                if self.is_numeric_text(run.text):
+                                    logger.info(f"숫자 텍스트 감지됨, 번역 건너뜀: '{run.text}'")
+                                    text_element['translated'] = True
+                                else:
+                                    translated_text = self.ollama_service.translate_text(
+                                        run.text, source_lang, target_lang, text_model
+                                    )
+                                    run.text = translated_text
+                                    text_element['translated'] = True
+                                break
+            
+            except Exception as e:
+                logger.error(f"텍스트 번역 오류 (요소 {idx+1}/{len(text_elements)}): {str(e)}")
+                logger.error(traceback.format_exc())
+            
+            # 진행 상황 업데이트
+            if progress_callback:
+                current = processed_items + idx + 1
+                progress_callback(current, total_elements)
+
     def _translate_image_elements(self, ppt, image_elements, temp_dir, source_lang, target_lang, 
                                 vision_model, text_model, progress_callback=None, 
                                 processed_items=0, total_elements=0):
@@ -243,13 +349,21 @@ class TranslationService:
                                                 extracted_text == "응답 타임아웃" or
                                                 extracted_text == "연결 타임아웃" or
                                                 extracted_text == "이미지 크기 초과"):
+                            
+                            # 번역
                             translated_text = self.ollama_service.translate_text(
                                 extracted_text, source_lang, target_lang, text_model
                             )
                             
                             if translated_text and translated_text != extracted_text:
-                                # 번역된 텍스트로 이미지 오버레이
-                                translated_image_path = overlay_text_on_image(temp_image_path, translated_text)
+                                # 변경된 함수 호출 - 비전 모델 및 원본 언어 정보 전달
+                                translated_image_path = overlay_text_on_image(
+                                    temp_image_path, 
+                                    translated_text,
+                                    self.ollama_service,  # 비전 모델 서비스 전달
+                                    vision_model,        # 비전 모델 이름
+                                    source_lang           # 원본 언어
+                                )
                                 
                                 # 번역된 이미지로 교체
                                 if os.path.exists(translated_image_path) and translated_image_path != temp_image_path:
@@ -266,10 +380,6 @@ class TranslationService:
                             os.remove(temp_image_path)
                     except:
                         pass
-                    
-                    # GC 힌트
-                    import gc
-                    gc.collect()
             
             except Exception as e:
                 logger.error(f"이미지 번역 오류 (요소 {idx+1}/{len(image_elements)}): {str(e)}")
