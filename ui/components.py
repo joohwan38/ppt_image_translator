@@ -55,7 +55,7 @@ def create_file_frame(root, select_file_callback):
     
     return file_frame, file_path_var, file_path_entry
 
-def create_server_status_frame(root, check_ollama_callback, check_tesseract_callback, check_paddleocr_callback=None):
+def create_server_status_frame(root, check_ollama_callback, check_paddleocr_callback):
     """서버 상태 프레임 생성 (행 기준 레이아웃)"""
     server_status_frame = tk.LabelFrame(root, text="서버 상태", padx=8, pady=8)
     server_status_frame.grid(row=2, column=0, columnspan=2, padx=DEFAULT_PADDING, pady=DEFAULT_PADDING, sticky="ew")
@@ -84,37 +84,20 @@ def create_server_status_frame(root, check_ollama_callback, check_tesseract_call
                                   width=12, command=check_ollama_callback)
     check_ollama_button.grid(row=0, column=3, pady=2, padx=5, sticky="e")
     
-    # 2행: Tesseract 관련 정보 및 버튼
-    # Tesseract 상태
-    tesseract_status_label = tk.Label(server_status_frame, text="Tesseract OCR: 확인 중...")
-    tesseract_status_label.grid(row=1, column=0, sticky="w", pady=2)
-    
-    # 언어 설치 상태
-    tesseract_lang_label = tk.Label(server_status_frame, text="언어 설치 상태: 확인 중...")
-    tesseract_lang_label.grid(row=1, column=1, columnspan=2, sticky="w", pady=2)
-    
-    # Tesseract 확인 버튼
-    check_tesseract_button = tk.Button(server_status_frame, text="Tesseract 확인", 
-                                     width=12, command=check_tesseract_callback)
-    check_tesseract_button.grid(row=1, column=3, pady=2, padx=5, sticky="e")
-    
-    # 3행: PaddleOCR 관련 정보 및 버튼 (새로 추가)
+    # 2행: PaddleOCR 관련 정보 및 버튼 (Tesseract 대신)
     # PaddleOCR 상태
     paddleocr_status_label = tk.Label(server_status_frame, text="PaddleOCR: 확인 중...")
-    paddleocr_status_label.grid(row=2, column=0, sticky="w", pady=2)
+    paddleocr_status_label.grid(row=1, column=0, columnspan=3, sticky="w", pady=2)
     
-    # PaddleOCR 확인 버튼 (제공된 경우만)
-    if check_paddleocr_callback:
-        check_paddleocr_button = tk.Button(server_status_frame, text="PaddleOCR 확인", 
-                                        width=12, command=check_paddleocr_callback)
-        check_paddleocr_button.grid(row=2, column=3, pady=2, padx=5, sticky="e")
+    # PaddleOCR 확인 버튼
+    check_paddleocr_button = tk.Button(server_status_frame, text="PaddleOCR 확인", 
+                                     width=12, command=check_paddleocr_callback)
+    check_paddleocr_button.grid(row=1, column=3, pady=2, padx=5, sticky="e")
     
     components = {
         "ollama_installed_label": ollama_installed_label,
         "ollama_running_label": ollama_running_label,
         "ollama_port_label": ollama_port_label,
-        "tesseract_status_label": tesseract_status_label,
-        "tesseract_lang_label": tesseract_lang_label,
         "paddleocr_status_label": paddleocr_status_label
     }
     

@@ -246,33 +246,6 @@ class PowerPointTranslatorApp:
         if response == 'yes':
             show_paddleocr_install_guide()
             self.root.quit()
-        
-    # def show_language_pack_missing_warning(self):
-    #     """언어 팩 미설치 경고 메시지 표시"""
-    #     from tkinter import messagebox
-    #     from utils.tesseract_utils import show_tesseract_install_guide
-        
-    #     missing_langs = []
-    #     status, kor_available, jpn_available = check_tesseract()
-        
-    #     if not kor_available:
-    #         missing_langs.append("한국어(KOR)")
-    #     if not jpn_available:
-    #         missing_langs.append("일본어(JPN)")
-        
-    #     if missing_langs:
-    #         messagebox.showwarning(
-    #             "언어 팩 미설치",
-    #             f"Tesseract OCR은 설치되어 있지만, 필요한 언어 데이터({', '.join(missing_langs)})가 설치되어 있지 않습니다.\n" + 
-    #             "언어 데이터가 없으면 해당 언어의 이미지 텍스트 인식이 제대로 작동하지 않을 수 있습니다.\n\n" +
-    #             "언어 데이터 설치 방법을 확인하시겠습니까?"
-    #         )
-    #         show_tesseract_install_guide()
-    
-    # def show_tesseract_missing_warning(self):
-    #     """Tesseract 미설치 경고 메시지 표시"""
-    #     from utils.tesseract_utils import show_tesseract_install_guide
-    #     show_tesseract_install_guide()
     
     def check_ollama_status(self):
         """Ollama 상태 확인"""
