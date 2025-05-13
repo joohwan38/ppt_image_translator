@@ -28,6 +28,7 @@ class PowerPointTranslatorApp:
         self.root.title(APP_TITLE)
         self.root.geometry(DEFAULT_WINDOW_SIZE)
         self.debug_mode = debug_mode
+        self.root.eval('tk::PlaceWindow . center')
         
         # 서비스 초기화
         self.ollama_service = OllamaService()

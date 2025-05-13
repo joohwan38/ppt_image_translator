@@ -4,10 +4,10 @@ import tempfile
 import time
 import logging
 import traceback
+from paddleocr import PaddleOCR
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
-
-from utils.image_utils import resize_image_if_needed, overlay_text_on_image, enhanced_overlay_text
+from utils.image_utils import resize_image_if_needed, overlay_text_on_image, enhanced_overlay_text, map_language_to_paddle
 from utils.image_utils import is_numeric_text
 from utils.paddle_ocr_utils import check_paddleocr
 

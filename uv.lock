@@ -570,6 +570,7 @@ dependencies = [
     { name = "pytesseract" },
     { name = "python-pptx" },
     { name = "requests" },
+    { name = "setuptools" },
     { name = "tqdm" },
 ]
 
@@ -584,6 +585,7 @@ requires-dist = [
     { name = "pytesseract", specifier = ">=0.3.13" },
     { name = "python-pptx", specifier = ">=1.0.2" },
     { name = "requests", specifier = ">=2.32.3" },
+    { name = "setuptools", specifier = ">=80.4.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
 ]
 
@@ -878,6 +880,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/8e/038ccfe29d272b30086b25a4960f757f97122cb2ec42e62b460d02fe98e9/scipy-1.15.3-cp313-cp313t-musllinux_1_2_aarch64.whl", hash = "sha256:40e54d5c7e7ebf1aa596c374c49fa3135f04648a0caabcb66c52884b943f02b4", size = 36393132 },
     { url = "https://files.pythonhosted.org/packages/10/7e/5c12285452970be5bdbe8352c619250b97ebf7917d7a9a9e96b8a8140f17/scipy-1.15.3-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:5e721fed53187e71d0ccf382b6bf977644c533e506c4d33c3fb24de89f5c3ed5", size = 38979503 },
     { url = "https://files.pythonhosted.org/packages/81/06/0a5e5349474e1cbc5757975b21bd4fad0e72ebf138c5592f191646154e06/scipy-1.15.3-cp313-cp313t-win_amd64.whl", hash = "sha256:76ad1fb5f8752eabf0fa02e4cc0336b4e8f021e2d5f061ed37d6d264db35e3ca", size = 40308097 },
+]
+
+[[package]]
+name = "setuptools"
+version = "80.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/32/0cc40fe41fd2adb80a2f388987f4f8db3c866c69e33e0b4c8b093fdf700e/setuptools-80.4.0.tar.gz", hash = "sha256:5a78f61820bc088c8e4add52932ae6b8cf423da2aff268c23f813cfbb13b4006", size = 1315008 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b1/93/dba5ed08c2e31ec7cdc2ce75705a484ef0be1a2fecac8a58272489349de8/setuptools-80.4.0-py3-none-any.whl", hash = "sha256:6cdc8cb9a7d590b237dbe4493614a9b75d0559b888047c1f67d49ba50fc3edb2", size = 1200812 },
 ]
 
 [[package]]

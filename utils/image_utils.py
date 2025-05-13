@@ -1,21 +1,58 @@
+# utils/image_utils.py
 import cv2
 import numpy as np
 import os
 import logging
 import time
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
+import pytesseract
 from collections import defaultdict
 import math
-import paddle
-import paddleocr
-from paddleocr import PaddleOCR
 
-from config import MAX_IMAGE_SIZE, MAX_IMAGE_FILESIZE
+from config import MAX_IMAGE_SIZE, MAX_IMAGE_FILESIZE, OCR_LANG_MAPPING
 
 logger = logging.getLogger(__name__)
 
-# Tesseract 관련 함수와 기본 오버레이 방식은 필요 없음
-# is_numeric_text 함수 등 계속 필요한 것만 유지
+# PaddleOCR 가용성 확인
+PADDLE_AVAILABLE = False
+try:
+    import paddle
+    import paddleocr
+    from paddleocr import PaddleOCR
+    PADDLE_AVAILABLE = True
+    logger.info("PaddleOCR을 이미지 처리에 사용할 수 있습니다.")
+except ImportError:
+    logger.warning("PaddleOCR을 사용할 수 없어 기본 Tesseract OCR을 사용합니다.")
+
+def resize_image_if_needed(image_path):
+    """이미지 크기가 임계값을 초과하는 경우 리사이징"""
+    try:
+        img = Image.open(image_path)
+        img_size = os.path.getsize(image_path)
+        logger.info(f"원본 이미지 크기: {img.width}x{img.height}, {img_size} 바이트")
+        
+        if img_size > MAX_IMAGE_FILESIZE or img.width > MAX_IMAGE_SIZE or img.height > MAX_IMAGE_SIZE:
+            logger.info("이미지 리사이징 시작")
+            ratio = min(MAX_IMAGE_SIZE / img.width, MAX_IMAGE_SIZE / img.height)
+            new_width = int(img.width * ratio)
+            new_height = int(img.height * ratio)
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            resized_path = f"{os.path.splitext(image_path)[0]}_resized.png"
+            img.save(resized_path, optimize=True, quality=85)
+            logger.info(f"이미지 리사이징 완료: {new_width}x{new_height}")
+            
+            # 메모리에서 이미지 해제
+            img.close()
+            return resized_path
+        
+        # 메모리에서 이미지 해제
+        img.close()
+        return image_path
+    except Exception as e:
+        logger.exception(f"이미지 리사이징 오류: {e}")
+        return image_path
+
 def is_numeric_text(text):
     """숫자와 관련된 텍스트 감지"""
     text = text.strip()
@@ -371,6 +408,11 @@ def enhanced_overlay_text(image_path, translated_text, source_lang=None):
     """고급 텍스트 오버레이 (PaddleOCR + 인페인팅 + 스타일 보존)"""
     logger.info(f"고급 이미지 번역 시작: {image_path}")
     
+    # PaddleOCR이 설치되지 않은 경우 기본 방식으로 전환
+    if not PADDLE_AVAILABLE:
+        logger.warning("PaddleOCR이 설치되지 않아 기본 방식으로 전환합니다.")
+        return overlay_text_on_image(image_path, translated_text, source_lang)
+    
     try:
         # 이미지 로드
         img = cv2.imread(image_path)
@@ -379,120 +421,17 @@ def enhanced_overlay_text(image_path, translated_text, source_lang=None):
             return basic_overlay_text(image_path, translated_text)
         
         # 1. PaddleOCR로 텍스트 영역 감지
-        try:
-            import paddle  # paddlepaddle -> paddle
-            from paddleocr import PaddleOCR
-            
-            ocr = PaddleOCR(use_angle_cls=True, lang=map_language_to_paddle(source_lang))
-            result = ocr.ocr(image_path, cls=True)
-            
-            logger.debug(f"PaddleOCR 결과: {result}")
-            
-            # 텍스트 블록 없으면 기본 방식 사용
-            if not result or len(result[0]) == 0:
-                logger.warning("PaddleOCR: 텍스트 블록을 찾을 수 없습니다.")
-                return basic_overlay_text(image_path, translated_text)
-            
-            # 2. 추출된 텍스트와 번역된 텍스트 매핑
-            original_texts = []
-            text_regions = []
-            
-            for line in result[0]:
-                bbox = line[0]  # 텍스트 경계 상자
-                text = line[1][0]  # 텍스트 내용
-                confidence = line[1][1]  # 신뢰도
-                
-                logger.debug(f"감지된 텍스트: '{text}', 신뢰도: {confidence}, 위치: {bbox}")
-                
-                if confidence > 0.6 and len(text.strip()) > 1:
-                    # 숫자만 있는 텍스트는 제외
-                    if not is_numeric_text(text):
-                        original_texts.append(text)
-                        text_regions.append(bbox)
-            
-            # 감지된 텍스트가 없으면 기본 방식 사용
-            if not original_texts:
-                logger.warning("PaddleOCR: 유효한 텍스트가 감지되지 않았습니다.")
-                return basic_overlay_text(image_path, translated_text)
-            
-            # 번역된 텍스트 분할 (원본 텍스트 블록 수에 맞게)
-            translated_lines = translated_text.split('\n')
-            text_mapping = match_original_and_translated(original_texts, translated_lines)
-            
-            # 결과 이미지 준비
-            result_img = img.copy()
-            
-            # 3. 각 텍스트 영역 처리
-            for i, bbox in enumerate(text_regions):
-                if i >= len(original_texts):
-                    continue
-                
-                # 원본 텍스트
-                original_text = original_texts[i]
-                # 번역된 텍스트
-                translated_text = text_mapping.get(original_text, "")
-                
-                if not translated_text:
-                    continue
-                
-                logger.debug(f"텍스트 번역: '{original_text}' -> '{translated_text}'")
-                
-                # 텍스트 영역 마스크 생성
-                mask = np.zeros(img.shape[:2], dtype=np.uint8)
-                points = np.array([[int(p[0]), int(p[1])] for p in bbox], dtype=np.int32)
-                cv2.fillPoly(mask, [points], 255)
-                
-                # 4. 인페인팅으로 원본 텍스트 제거
-                result_img = cv2.inpaint(result_img, mask, 3, cv2.INPAINT_TELEA)
-                
-                # 5. 텍스트 스타일 속성 추출 (색상, 크기, 각도)
-                font_size, rotation, color = extract_text_style(img, bbox, original_text)
-                logger.debug(f"추출된 스타일: 폰트 크기 {font_size}, 회전 {rotation}, 색상 {color}")
-                
-                # 6. 번역된 텍스트 삽입 (스타일 보존)
-                result_img = insert_text_with_style(result_img, translated_text, bbox, 
-                                                font_size, rotation, color)
-            
-            # 결과 저장
-            timestamp = int(time.time() * 1000)
-            output_path = f"enhanced_translated_{timestamp}_{os.path.basename(image_path)}"
-            cv2.imwrite(output_path, result_img)
-            logger.info(f"고급 번역 이미지 저장: {output_path}")
-            
-            return output_path
-            
-        except ImportError as e:
-            logger.error(f"PaddleOCR 모듈 오류: {e}")
-            logger.info("기본 방식으로 전환합니다.")
-            return basic_overlay_text(image_path, translated_text)
-            
-    except Exception as e:
-        logger.exception(f"고급 이미지 번역 오류: {e}")
-        return basic_overlay_text(image_path, translated_text)
-
-def overlay_text_on_image(image_path, translated_text, source_lang=None):
-    """이미지의 텍스트를 번역된 텍스트로 정확히 대체 (PaddleOCR 전용)"""
-    logger.info(f"이미지 번역 시작: {image_path}")
-    
-    try:
-        # 이미지 로드
-        img = cv2.imread(image_path)
-        if img is None:
-            logger.error(f"이미지 로드 실패: {image_path}")
-            return image_path
-        
-        # PaddleOCR로 텍스트 영역 감지
         ocr = PaddleOCR(use_angle_cls=True, lang=map_language_to_paddle(source_lang))
         result = ocr.ocr(image_path, cls=True)
         
         logger.debug(f"PaddleOCR 결과: {result}")
         
-        # 텍스트 블록 없으면 원본 이미지 반환
+        # 텍스트 블록 없으면 기본 방식 사용
         if not result or len(result[0]) == 0:
             logger.warning("PaddleOCR: 텍스트 블록을 찾을 수 없습니다.")
-            return image_path
+            return basic_overlay_text(image_path, translated_text)
         
-        # 추출된 텍스트와 번역된 텍스트 매핑
+        # 2. 추출된 텍스트와 번역된 텍스트 매핑
         original_texts = []
         text_regions = []
         
@@ -509,10 +448,10 @@ def overlay_text_on_image(image_path, translated_text, source_lang=None):
                     original_texts.append(text)
                     text_regions.append(bbox)
         
-        # 감지된 텍스트가 없으면 원본 이미지 반환
+        # 감지된 텍스트가 없으면 기본 방식 사용
         if not original_texts:
             logger.warning("PaddleOCR: 유효한 텍스트가 감지되지 않았습니다.")
-            return image_path
+            return basic_overlay_text(image_path, translated_text)
         
         # 번역된 텍스트 분할 (원본 텍스트 블록 수에 맞게)
         translated_lines = translated_text.split('\n')
@@ -521,7 +460,7 @@ def overlay_text_on_image(image_path, translated_text, source_lang=None):
         # 결과 이미지 준비
         result_img = img.copy()
         
-        # 각 텍스트 영역 처리
+        # 3. 각 텍스트 영역 처리
         for i, bbox in enumerate(text_regions):
             if i >= len(original_texts):
                 continue
@@ -541,28 +480,164 @@ def overlay_text_on_image(image_path, translated_text, source_lang=None):
             points = np.array([[int(p[0]), int(p[1])] for p in bbox], dtype=np.int32)
             cv2.fillPoly(mask, [points], 255)
             
-            # 인페인팅으로 원본 텍스트 제거
+            # 4. 인페인팅으로 원본 텍스트 제거
             result_img = cv2.inpaint(result_img, mask, 3, cv2.INPAINT_TELEA)
             
-            # 텍스트 스타일 속성 추출 (색상, 크기, 각도)
+            # 5. 텍스트 스타일 속성 추출 (색상, 크기, 각도)
             font_size, rotation, color = extract_text_style(img, bbox, original_text)
             logger.debug(f"추출된 스타일: 폰트 크기 {font_size}, 회전 {rotation}, 색상 {color}")
             
-            # 번역된 텍스트 삽입 (스타일 보존)
+            # 6. 번역된 텍스트 삽입 (스타일 보존)
             result_img = insert_text_with_style(result_img, translated_text, bbox, 
-                                            font_size, rotation, color)
+                                             font_size, rotation, color)
         
         # 결과 저장
         timestamp = int(time.time() * 1000)
-        output_path = f"translated_{timestamp}_{os.path.basename(image_path)}"
+        output_path = f"enhanced_translated_{timestamp}_{os.path.basename(image_path)}"
         cv2.imwrite(output_path, result_img)
-        logger.info(f"번역된 이미지 저장: {output_path}")
+        logger.info(f"고급 번역 이미지 저장: {output_path}")
         
         return output_path
         
     except Exception as e:
-        logger.exception(f"이미지 번역 오류: {e}")
-        return image_path
+        logger.exception(f"고급 이미지 번역 오류: {e}")
+        return basic_overlay_text(image_path, translated_text)
+
+def overlay_text_on_image(image_path, translated_text, source_lang=None):
+    """이미지의 텍스트를 번역된 텍스트로 정확히 대체 (위치, 크기, 스타일 유지)"""
+    try:
+        # PaddleOCR이 설치되어 있으면 향상된 방식 사용
+        if PADDLE_AVAILABLE:
+            return enhanced_overlay_text(image_path, translated_text, source_lang)
+
+        # OCR 언어 설정
+        ocr_lang = 'eng'  # 기본값
+        if source_lang in OCR_LANG_MAPPING:
+            ocr_lang_list = OCR_LANG_MAPPING[source_lang]
+            ocr_lang = '+'.join(ocr_lang_list)
+        
+        # 이미지 로드 (PIL 및 OpenCV)
+        pil_img = Image.open(image_path)
+        cv_img = cv2.imread(image_path)
+        if cv_img is None:
+            logger.error(f"이미지 로드 실패: {image_path}")
+            return image_path
+        
+        img_height, img_width = cv_img.shape[:2]
+        
+        # 텍스트 추출 (세부 정보 포함)
+        try:
+            import pytesseract
+            custom_config = r'--oem 3 --psm 11'
+            ocr_data = pytesseract.image_to_data(
+                cv_img, lang=ocr_lang, config=custom_config, output_type=pytesseract.Output.DICT
+            )
+        except Exception as e:
+            logger.error(f"OCR 오류: {e}")
+            return basic_overlay_text(image_path, translated_text)
+        
+        # 유효한 텍스트 블록 추출
+        valid_blocks = []
+        for i in range(len(ocr_data['text'])):
+            # 빈 텍스트나 짧은 텍스트는 제외
+            if not ocr_data['text'][i] or len(ocr_data['text'][i].strip()) < 2:
+                continue
+            
+            # 숫자만 있는 텍스트는 제외
+            if is_numeric_text(ocr_data['text'][i]):
+                continue
+            
+            # 유효한 텍스트 블록 필터링 (신뢰도 기준)
+            if int(ocr_data['conf'][i]) > 50:
+                block = {
+                    'text': ocr_data['text'][i],
+                    'left': ocr_data['left'][i],
+                    'top': ocr_data['top'][i],
+                    'width': ocr_data['width'][i],
+                    'height': ocr_data['height'][i],
+                    'conf': ocr_data['conf'][i]
+                }
+                valid_blocks.append(block)
+        
+        # 유효한 블록이 없으면 기본 방식 사용
+        if not valid_blocks:
+            logger.warning("유효한 텍스트 블록을 찾을 수 없습니다. 기본 방식으로 전환합니다.")
+            return basic_overlay_text(image_path, translated_text)
+        
+        # 텍스트 블록을 문단으로 그룹화
+        text_groups = group_text_blocks(valid_blocks)
+        
+        # 번역된 텍스트를 줄 단위로 분할
+        translated_lines = translated_text.split('\n')
+        
+        # 그룹과 번역된 텍스트 줄을 매핑
+        # 그룹 수와 번역 줄 수가 다를 수 있으므로 조정 필요
+        group_text_map = {}
+        
+        # 가장 간단한 매핑: 순서대로 할당
+        for i, group in enumerate(text_groups):
+            if i < len(translated_lines):
+                group_text_map[i] = translated_lines[i]
+            else:
+                # 번역 줄이 부족한 경우 마지막 줄 재사용 또는 빈 텍스트 할당
+                group_text_map[i] = translated_lines[-1] if translated_lines else ""
+        
+        # 번역된 텍스트 줄이 더 많으면 마지막 그룹에 나머지 텍스트 추가
+        if text_groups and len(translated_lines) > len(text_groups):
+            last_group_idx = len(text_groups) - 1
+            group_text_map[last_group_idx] = "\n".join(translated_lines[last_group_idx:])
+        
+        # 그리기 객체 생성
+        draw = ImageDraw.Draw(pil_img)
+        
+        # 각 그룹을 처리하여 원본 위치에 번역된 텍스트 표시
+        for i, group in enumerate(text_groups):
+            if i not in group_text_map:
+                continue
+                
+            translated_text_for_group = group_text_map[i]
+            
+            # 그룹 영역 계산
+            left = min(block['left'] for block in group)
+            top = min(block['top'] for block in group)
+            right = max(block['left'] + block['width'] for block in group)
+            bottom = max(block['top'] + block['height'] for block in group)
+            
+            # 텍스트 속성 추정 (첫 번째 블록 기준)
+            text_props = estimate_text_properties(group[0], img_height)
+            font_size = text_props['font_size']
+            is_bold = text_props['is_bold']
+            
+            # 적절한 폰트 로드
+            font = get_multilingual_font(font_size, is_bold)
+            
+            # 텍스트 영역 지우기 (흰색 또는 배경색으로)
+            # PIL에서 직사각형 채우기
+            draw.rectangle([left, top, right, bottom], fill=(255, 255, 255))
+            
+            # 텍스트가 영역에 맞게 줄바꿈이 필요한지 계산
+            max_width = right - left
+            wrapped_text = wrap_text(translated_text_for_group, font, max_width)
+            
+            # 번역된 텍스트 렌더링
+            y_offset = top
+            for line in wrapped_text:
+                # PIL로 텍스트 그리기 (검정색)
+                draw.text((left, y_offset), line, font=font, fill=(0, 0, 0))
+                # 다음 줄로 이동 (줄 간격은 폰트 크기의 1.2배 정도)
+                y_offset += int(font_size * 1.2)
+        
+        # 결과 저장
+        timestamp = int(time.time() * 1000)
+        basename = os.path.basename(image_path)
+        output_path = f"translated_{timestamp}_{basename}"
+        pil_img.save(output_path)
+        logger.info(f"번역된 이미지 저장: {output_path}")
+        return output_path
+    
+    except Exception as e:
+        logger.exception(f"이미지 텍스트 대체 오류: {e}")
+        return basic_overlay_text(image_path, translated_text)
 
 def basic_overlay_text(image_path, translated_text):
     """기본 텍스트 오버레이 방식 - 향상된 버전"""
