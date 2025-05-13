@@ -322,7 +322,9 @@ def overlay_text_on_image(image_path, translated_text, source_lang=None):
                 y_offset += int(font_size * 1.2)
         
         # 결과 저장
-        output_path = f"translated_{os.path.basename(image_path)}"
+        timestamp = int(time.time() * 1000)
+        basename = os.path.basename(image_path)
+        output_path = f"translated_{timestamp}_{basename}"
         pil_img.save(output_path)
         logger.info(f"번역된 이미지 저장: {output_path}")
         return output_path
@@ -401,7 +403,9 @@ def basic_overlay_text(image_path, translated_text):
             y_offset += line_height
         
         # 결과 저장
-        output_path = f"basic_translated_{os.path.basename(image_path)}"
+        timestamp = int(time.time() * 1000)
+        basename = os.path.basename(image_path)
+        output_path = f"basic_translated_{timestamp}_{basename}"
         pil_img.save(output_path)
         logger.info(f"기본 오버레이 이미지 저장: {output_path}")
         return output_path

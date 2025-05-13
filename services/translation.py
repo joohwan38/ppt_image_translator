@@ -24,6 +24,9 @@ class TranslationService:
         
         debug_mode = options.get('debug_mode', False)
         
+        # 임시 파일 추적 리스트
+        temp_files = []
+        
         if debug_mode:
             original_level = logger.level
             logger.setLevel(logging.DEBUG)
@@ -74,16 +77,20 @@ class TranslationService:
                     status_callback("이미지 요소 번역 중...")
                 logger.info("이미지 요소 번역 시작")
                 
+                # 이미지 번역 로직에 temp_files 리스트 전달
                 self._translate_image_elements(
                     ppt, image_elements, temp_dir, source_lang, target_lang, 
                     text_model, progress_callback, processed_items, total_elements, 
-                    options
+                    options, temp_files  # temp_files 추가
                 )
                 
                 # 번역된 파일 저장
                 output_path = os.path.splitext(ppt_path)[0] + "_translated.pptx"
                 logger.info(f"번역된 파일 저장: {output_path}")
                 ppt.save(output_path)
+                
+                # 임시 이미지 파일 삭제
+                self._cleanup_temp_files(temp_files)
                 
                 if status_callback:
                     status_callback(f"번역 완료! 파일 저장됨: {output_path}")
@@ -97,6 +104,10 @@ class TranslationService:
                 status_callback(f"번역 오류: {str(e)}")
             raise
         finally:
+            # 실패 시에도 임시 파일 정리 시도
+            if 'temp_files' in locals() and temp_files:
+                self._cleanup_temp_files(temp_files)
+                
             if debug_mode:
                 logger.setLevel(original_level)
                 logger.info("디버그 모드 비활성화됨")
@@ -212,10 +223,13 @@ class TranslationService:
     
     def _translate_image_elements(self, ppt, image_elements, temp_dir, source_lang, target_lang,
                                 text_model, progress_callback=None, processed_items=0, total_elements=0,
-                                options=None):
+                                options=None, temp_files=None):
         """이미지 요소 번역 처리"""
         if options is None:
             options = {}
+            
+        if temp_files is None:
+            temp_files = []
             
         debug_mode = options.get('debug_mode', False)
         source_lang_for_ocr = options.get('source_lang', source_lang)
@@ -243,6 +257,8 @@ class TranslationService:
                     with open(temp_image_path, "wb") as f:
                         f.write(image_bytes)
                     
+                    # 임시 파일 추적 목록에 추가
+                    temp_files.append(temp_image_path)
                     logger.info(f"이미지 저장: {temp_image_path} ({len(image_bytes)} 바이트)")
                     
                     # 이미지 처리: 리사이징 및 OCR
@@ -301,11 +317,16 @@ class TranslationService:
                         
                         if translated_text and translated_text != extracted_text:
                             # 번역된 텍스트로 이미지 오버레이
+                            timestamp = int(time.time() * 1000)
                             translated_image_path = overlay_text_on_image(
                                 temp_image_path, 
                                 translated_text,
                                 source_lang
                             )
+                            
+                            # 번역된 이미지 파일 추적
+                            if translated_image_path != temp_image_path:
+                                temp_files.append(translated_image_path)
                             
                             # 번역된 이미지로 교체
                             if os.path.exists(translated_image_path) and translated_image_path != temp_image_path:
@@ -330,12 +351,14 @@ class TranslationService:
                         logger.error(f"이미지 OCR 처리 오류: {e}")
                         logger.debug(traceback.format_exc())
                     
-                    # 임시 파일 정리
+                    # 원본 임시 파일 삭제 (즉시 삭제 옵션)
                     try:
                         if os.path.exists(temp_image_path):
                             os.remove(temp_image_path)
-                    except:
-                        pass
+                            if temp_image_path in temp_files:
+                                temp_files.remove(temp_image_path)  # 목록에서 제거
+                    except Exception as e:
+                        logger.debug(f"임시 파일 삭제 실패: {e}")
             
             except Exception as e:
                 logger.error(f"이미지 번역 오류 (요소 {idx+1}/{len(image_elements)}): {str(e)}")
@@ -345,3 +368,16 @@ class TranslationService:
             if progress_callback:
                 current = processed_items + idx + 1
                 progress_callback(current, total_elements)
+
+    def _cleanup_temp_files(self, file_list):
+        """임시 파일 정리"""
+        count = 0
+        for file_path in file_list:
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    count += 1
+            except Exception as e:
+                logger.warning(f"임시 파일 삭제 실패: {file_path}, 오류: {e}")
+        
+        logger.info(f"{count}개의 임시 이미지 파일 삭제됨")

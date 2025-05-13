@@ -47,53 +47,54 @@ def create_file_frame(root, select_file_callback):
     return file_frame, file_path_var, file_path_entry
 
 def create_server_status_frame(root, check_ollama_callback, check_tesseract_callback):
-    """서버 상태 프레임 생성"""
+    """서버 상태 프레임 생성 (행 기준 레이아웃)"""
     server_status_frame = tk.LabelFrame(root, text="서버 상태", padx=8, pady=8)
     server_status_frame.grid(row=2, column=0, columnspan=2, padx=DEFAULT_PADDING, pady=DEFAULT_PADDING, sticky="ew")
     
-    # Ollama 프레임
-    ollama_frame = tk.Frame(server_status_frame)
-    ollama_frame.grid(row=0, column=0, sticky="w")
+    # 그리드 컬럼 설정 (4 컬럼)
+    server_status_frame.columnconfigure(0, weight=2)  # 설치 상태
+    server_status_frame.columnconfigure(1, weight=2)  # 실행 상태
+    server_status_frame.columnconfigure(2, weight=2)  # 포트/언어
+    server_status_frame.columnconfigure(3, weight=1)  # 버튼
     
+    # 1행: Ollama 관련 정보 및 버튼
     # Ollama 설치 상태
-    ollama_installed_label = tk.Label(ollama_frame, text="Ollama 설치 상태: 확인 중...")
+    ollama_installed_label = tk.Label(server_status_frame, text="Ollama 설치 상태: 확인 중...")
     ollama_installed_label.grid(row=0, column=0, sticky="w", pady=2)
     
     # Ollama 실행 상태
-    ollama_running_label = tk.Label(ollama_frame, text="Ollama 실행 상태: 확인 중...")
-    ollama_running_label.grid(row=1, column=0, sticky="w", pady=2)
-    
-    # Tesseract 프레임
-    tesseract_frame = tk.Frame(server_status_frame)
-    tesseract_frame.grid(row=0, column=1, sticky="w", padx=20)
+    ollama_running_label = tk.Label(server_status_frame, text="Ollama 실행 상태: 확인 중...")
+    ollama_running_label.grid(row=0, column=1, sticky="w", pady=2)
     
     # Ollama 포트
-    ollama_port_label = tk.Label(tesseract_frame, text="Ollama 포트: 확인 중...")
-    ollama_port_label.grid(row=0, column=0, sticky="w", pady=2)
+    ollama_port_label = tk.Label(server_status_frame, text="Ollama 포트: 확인 중...")
+    ollama_port_label.grid(row=0, column=2, sticky="w", pady=2)
     
+    # Ollama 확인 버튼
+    check_ollama_button = tk.Button(server_status_frame, text="Ollama 확인", 
+                                  width=12, command=check_ollama_callback)
+    check_ollama_button.grid(row=0, column=3, pady=2, padx=5, sticky="e")
+    
+    # 2행: Tesseract 관련 정보 및 버튼
     # Tesseract 상태
-    tesseract_status_label = tk.Label(tesseract_frame, text="Tesseract OCR: 확인 중...")
+    tesseract_status_label = tk.Label(server_status_frame, text="Tesseract OCR: 확인 중...")
     tesseract_status_label.grid(row=1, column=0, sticky="w", pady=2)
     
-    # 버튼 프레임
-    server_buttons_frame = tk.Frame(server_status_frame)
-    server_buttons_frame.grid(row=0, column=2, padx=10)
+    # 언어 설치 상태
+    tesseract_lang_label = tk.Label(server_status_frame, text="언어 설치 상태: 확인 중...")
+    tesseract_lang_label.grid(row=1, column=1, columnspan=2, sticky="w", pady=2)
     
-    # Ollama 상태 확인 버튼
-    check_ollama_button = tk.Button(server_buttons_frame, text="Ollama 확인", 
-                                  command=check_ollama_callback)
-    check_ollama_button.pack(pady=1)
-    
-    # Tesseract 상태 확인 버튼
-    check_tesseract_button = tk.Button(server_buttons_frame, text="Tesseract 확인", 
-                                      command=check_tesseract_callback)
-    check_tesseract_button.pack(pady=1)
+    # Tesseract 확인 버튼
+    check_tesseract_button = tk.Button(server_status_frame, text="Tesseract 확인", 
+                                     width=12, command=check_tesseract_callback)
+    check_tesseract_button.grid(row=1, column=3, pady=2, padx=5, sticky="e")
     
     components = {
         "ollama_installed_label": ollama_installed_label,
         "ollama_running_label": ollama_running_label,
         "ollama_port_label": ollama_port_label,
-        "tesseract_status_label": tesseract_status_label
+        "tesseract_status_label": tesseract_status_label,
+        "tesseract_lang_label": tesseract_lang_label
     }
     
     return server_status_frame, components
@@ -161,7 +162,15 @@ def create_options_frame(root, languages):
     options_frame = tk.LabelFrame(root, text="번역 옵션", padx=8, pady=5)
     options_frame.grid(row=4, column=0, columnspan=2, padx=DEFAULT_PADDING, pady=DEFAULT_PADDING, sticky="ew")
     
-    # 번역 옵션 그리드 2열 배치
+    # 프레임 너비 꽉 차게 설정
+    options_frame.columnconfigure(0, weight=1)  # 원본 언어 레이블
+    options_frame.columnconfigure(1, weight=2)  # 원본 언어 콤보박스
+    options_frame.columnconfigure(2, weight=1)  # 화살표
+    options_frame.columnconfigure(3, weight=1)  # 번역 언어 레이블
+    options_frame.columnconfigure(4, weight=2)  # 번역 언어 콤보박스
+    options_frame.columnconfigure(5, weight=0)  # 여백
+    
+    # 번역 옵션 그리드 배치
     source_label = tk.Label(options_frame, text="원본 언어:")
     source_label.grid(row=0, column=0, padx=5, pady=3, sticky="e")
     
@@ -170,8 +179,17 @@ def create_options_frame(root, languages):
                               values=languages, width=10)
     source_combo.grid(row=0, column=1, padx=2, pady=3, sticky="w")
     
-    arrow_label = tk.Label(options_frame, text="⟷")
-    arrow_label.grid(row=0, column=2, padx=2, pady=3)
+    # 양방향 화살표 버튼 (클릭 가능)
+    def swap_languages():
+        # 언어 교체 함수
+        source_val = source_lang.get()
+        target_val = target_lang.get()
+        source_lang.set(target_val)
+        target_lang.set(source_val)
+    
+    arrow_button = tk.Button(options_frame, text="⟷", command=swap_languages, 
+                           borderwidth=0, relief="flat", bg=options_frame.cget("bg"))
+    arrow_button.grid(row=0, column=2, padx=2, pady=3)
     
     target_label = tk.Label(options_frame, text="번역 언어:")
     target_label.grid(row=0, column=3, padx=5, pady=3, sticky="e")
@@ -187,23 +205,17 @@ def create_options_frame(root, languages):
     
     text_model_var = tk.StringVar(value="gemma3:12b")
     text_model_combo = ttk.Combobox(options_frame, textvariable=text_model_var, 
-                                  state="readonly", width=20)
-    text_model_combo.grid(row=1, column=1, columnspan=4, padx=2, pady=3, sticky="w")
+                                  state="readonly", width=40)
+    text_model_combo.grid(row=1, column=1, columnspan=4, padx=2, pady=3, sticky="ew")
     
-    # Ollama URL
-    url_label = tk.Label(options_frame, text="Ollama URL:")
-    url_label.grid(row=2, column=0, padx=5, pady=3, sticky="e")
-    
-    url_var = tk.StringVar(value="http://localhost:11434")
-    url_entry = tk.Entry(options_frame, textvariable=url_var, width=30)
-    url_entry.grid(row=2, column=1, columnspan=4, padx=2, pady=3, sticky="w")
+    # Ollama URL 부분 삭제
     
     components = {
         "source_lang": source_lang,
         "target_lang": target_lang,
         "text_model_var": text_model_var,
         "text_model_combo": text_model_combo,
-        "url_var": url_var
+        "swap_button": arrow_button
     }
     
     return options_frame, components

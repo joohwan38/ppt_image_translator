@@ -124,20 +124,45 @@ def _get_available_languages(tessdata_path):
 
 def show_tesseract_install_guide():
     """Tesseract OCR 설치 가이드 표시"""
+    from tkinter import messagebox
+    import webbrowser
+    
     if platform.system() == "Windows":
-        messagebox.showinfo("Tesseract OCR 설치 안내", 
-                          "1. https://github.com/UB-Mannheim/tesseract/wiki 에서 최신 인스톨러 다운로드\n" +
-                          "2. 설치 시 '추가 언어 데이터' 옵션에서 Korean과 Japanese 선택\n" +
-                          "3. 프로그램을 재시작하여 Tesseract 상태를 확인하세요.")
+        msg = ("Tesseract OCR 설치 방법:\n\n"
+              "1. https://github.com/UB-Mannheim/tesseract/wiki 에서 최신 인스톨러 다운로드\n"
+              "2. 설치 시 '추가 언어 데이터' 옵션에서 Korean과 Japanese 선택\n"
+              "3. 프로그램을 재시작하여 Tesseract 상태를 확인하세요.")
+        
+        response = messagebox.askyesno("Tesseract OCR 설치 안내", 
+                                      msg + "\n\n다운로드 페이지로 이동하시겠습니까?")
+        if response:
+            webbrowser.open("https://github.com/UB-Mannheim/tesseract/wiki")
+            
     elif platform.system() == "Darwin":  # macOS
-        messagebox.showinfo("Tesseract OCR 설치 안내", 
-                          "터미널에서 다음 명령어를 실행하세요:\n\n" +
-                          "brew install tesseract\n" +
-                          "brew install tesseract-lang\n\n" +
-                          "설치 후 프로그램을 재시작하여 Tesseract 상태를 확인하세요.")
+        msg = ("Tesseract OCR 설치 방법:\n\n"
+            "1. Homebrew 설치 (아직 설치하지 않은 경우):\n"
+            "   터미널에서 다음 명령어를 실행하세요:\n"
+            "   /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n\n"
+            "2. Tesseract 및 언어 패키지 설치:\n"
+            "   brew install tesseract\n"
+            "   brew install tesseract-lang\n\n"
+            "설치 후 프로그램을 재시작하여 Tesseract 상태를 확인하세요.")
+        
+        response = messagebox.askyesno("Tesseract OCR 설치 안내", 
+                                    msg + "\n\n터미널을 실행하시겠습니까?")
+        if response:
+            os.system("open -a Terminal")
+            
     else:  # Linux
-        messagebox.showinfo("Tesseract OCR 설치 안내", 
-                          "터미널에서 다음 명령어를 실행하세요:\n\n" +
-                          "sudo apt-get install tesseract-ocr\n" +
-                          "sudo apt-get install tesseract-ocr-kor tesseract-ocr-jpn\n\n" +
-                          "설치 후 프로그램을 재시작하여 Tesseract 상태를 확인하세요.")
+        msg = ("Tesseract OCR 설치 방법:\n\n"
+              "터미널에서 다음 명령어를 실행하세요:\n\n"
+              "sudo apt-get install tesseract-ocr\n"
+              "sudo apt-get install tesseract-ocr-kor tesseract-ocr-jpn\n\n"
+              "설치 후 프로그램을 재시작하여 Tesseract 상태를 확인하세요.")
+        
+        response = messagebox.askyesno("Tesseract OCR 설치 안내", 
+                                      msg + "\n\n터미널을 실행하시겠습니까?")
+        if response:
+            os.system("gnome-terminal")
+    
+    logger.info("Tesseract OCR 설치 안내 표시됨")

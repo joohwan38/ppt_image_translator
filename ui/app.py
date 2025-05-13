@@ -74,6 +74,8 @@ class PowerPointTranslatorApp:
         self.ollama_running_label = server_components["ollama_running_label"]
         self.ollama_port_label = server_components["ollama_port_label"]
         self.tesseract_status_label = server_components["tesseract_status_label"]
+        self.tesseract_lang_label = server_components["tesseract_lang_label"]  # 이 줄 추가
+
         
         # 정보 프레임
         self.info_progress_frame = tk.Frame(self.root)
@@ -101,9 +103,7 @@ class PowerPointTranslatorApp:
         self.source_lang = options_components["source_lang"]
         self.target_lang = options_components["target_lang"]
         self.text_model_var = options_components["text_model_var"]
-        self.text_model_combo = options_components["text_model_combo"]
-        self.url_var = options_components["url_var"]
-        
+        self.text_model_combo = options_components["text_model_combo"]        
         # 번역 시작/중지 버튼
         self.buttons_frame, self.start_button, self.stop_button = create_buttons_frame(
             self.root, self.start_translation, self.stop_translation
@@ -190,12 +190,52 @@ class PowerPointTranslatorApp:
         status, kor_available, jpn_available = check_tesseract()
         
         if status:
-            status_text = f"Tesseract OCR: 설치됨 (KOR: {'있음' if kor_available else '없음'}, JPN: {'있음' if jpn_available else '없음'})"
-            self.tesseract_status_label.config(text=status_text, fg="green")
+            self.tesseract_status_label.config(
+                text=f"Tesseract OCR: 설치됨",
+                fg="green"
+            )
+            
+            # 언어 설치 상태 업데이트
+            lang_status = f"언어 설치 상태: KOR: {'있음' if kor_available else '없음'}, JPN: {'있음' if jpn_available else '없음'}"
+            self.tesseract_lang_label.config(
+                text=lang_status, 
+                fg="green" if (kor_available and jpn_available) else "orange"
+            )
+            
+            # 언어 팩이 없는 경우 안내 메시지 표시
+            if not (kor_available and jpn_available):
+                self.root.after(1000, self.show_language_pack_missing_warning)
+                
+            return True
         else:
             self.tesseract_status_label.config(text="Tesseract OCR: 설치되지 않음", fg="red")
+            self.tesseract_lang_label.config(text="언어 설치 상태: 확인 불가", fg="red")
             
-        return status
+            # 미설치 상태일 때 사용자에게 즉시 안내 메시지 표시
+            self.root.after(1000, self.show_tesseract_missing_warning)
+            return False
+        
+    def show_language_pack_missing_warning(self):
+        """언어 팩 미설치 경고 메시지 표시"""
+        from tkinter import messagebox
+        from utils.tesseract_utils import show_tesseract_install_guide
+        
+        missing_langs = []
+        status, kor_available, jpn_available = check_tesseract()
+        
+        if not kor_available:
+            missing_langs.append("한국어(KOR)")
+        if not jpn_available:
+            missing_langs.append("일본어(JPN)")
+        
+        if missing_langs:
+            messagebox.showwarning(
+                "언어 팩 미설치",
+                f"Tesseract OCR은 설치되어 있지만, 필요한 언어 데이터({', '.join(missing_langs)})가 설치되어 있지 않습니다.\n" + 
+                "언어 데이터가 없으면 해당 언어의 이미지 텍스트 인식이 제대로 작동하지 않을 수 있습니다.\n\n" +
+                "언어 데이터 설치 방법을 확인하시겠습니까?"
+            )
+            show_tesseract_install_guide()
     
     def check_ollama_status(self):
         """Ollama 상태 확인"""
@@ -229,7 +269,6 @@ class PowerPointTranslatorApp:
         
         # URL 업데이트
         if running and port:
-            self.url_var.set(f"http://localhost:{port}")
             
             # 최초 실행 시에만 모델 목록 업데이트
             if not self.models_initialized:
@@ -434,7 +473,6 @@ class PowerPointTranslatorApp:
         self.stop_button.config(state=tk.NORMAL)
         
         # 번역 서비스 초기화
-        self.ollama_service.url = self.url_var.get()  # URL 업데이트
         translation_service = TranslationService(self.ollama_service)
         
         # 번역 스레드 시작
