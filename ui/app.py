@@ -18,7 +18,7 @@ from services.ollama_service import OllamaService
 from services.document_analyzer import DocumentAnalyzer
 from services.translation import TranslationService
 from utils.logging_utils import TextHandler
-from utils.tesseract_utils import check_tesseract, show_tesseract_install_guide
+from utils.paddle_ocr_utils import check_paddleocr, show_paddleocr_install_guide
 
 class PowerPointTranslatorApp:
     def __init__(self, root, debug_mode=False):
@@ -54,7 +54,7 @@ class PowerPointTranslatorApp:
         
         # 초기 상태 확인
         self.check_ollama_status()
-        self.check_tesseract_status()
+        self.check_paddleocr_status()  # Tesseract 확인 제거, PaddleOCR만 확인
         
         self.logger.info(f"애플리케이션 초기화 완료 (디버그 모드: {debug_mode})")
     
@@ -68,14 +68,12 @@ class PowerPointTranslatorApp:
         
         # 서버 상태 프레임
         self.server_status_frame, server_components = create_server_status_frame(
-            self.root, self.check_ollama_status, self.check_tesseract_status
+            self.root, self.check_ollama_status, self.check_paddleocr_status
         )
         self.ollama_installed_label = server_components["ollama_installed_label"]
         self.ollama_running_label = server_components["ollama_running_label"]
         self.ollama_port_label = server_components["ollama_port_label"]
-        self.tesseract_status_label = server_components["tesseract_status_label"]
-        self.tesseract_lang_label = server_components["tesseract_lang_label"]  # 이 줄 추가
-
+        self.paddleocr_status_label = server_components["paddleocr_status_label"]
         
         # 정보 프레임
         self.info_progress_frame = tk.Frame(self.root)
@@ -185,57 +183,96 @@ class PowerPointTranslatorApp:
             self.status_label.config(text=f"문서 분석 오류: {str(e)}")
             messagebox.showerror("오류", f"문서 분석 중 오류가 발생했습니다: {str(e)}")
     
-    def check_tesseract_status(self):
-        """Tesseract OCR 설치 상태 확인"""
-        status, kor_available, jpn_available = check_tesseract()
+    # def check_tesseract_status(self):
+    #     """Tesseract OCR 설치 상태 확인"""
+    #     status, kor_available, jpn_available = check_tesseract()
+        
+    #     if status:
+    #         self.tesseract_status_label.config(
+    #             text=f"Tesseract OCR: 설치됨",
+    #             fg="green"
+    #         )
+            
+    #         # 언어 설치 상태 업데이트
+    #         lang_status = f"언어 설치 상태: KOR: {'있음' if kor_available else '없음'}, JPN: {'있음' if jpn_available else '없음'}"
+    #         self.tesseract_lang_label.config(
+    #             text=lang_status, 
+    #             fg="green" if (kor_available and jpn_available) else "orange"
+    #         )
+            
+    #         # 언어 팩이 없는 경우 안내 메시지 표시
+    #         if not (kor_available and jpn_available):
+    #             self.root.after(1000, self.show_language_pack_missing_warning)
+                
+    #         return True
+    #     else:
+    #         self.tesseract_status_label.config(text="Tesseract OCR: 설치되지 않음", fg="red")
+    #         self.tesseract_lang_label.config(text="언어 설치 상태: 확인 불가", fg="red")
+            
+    #         # 미설치 상태일 때 사용자에게 즉시 안내 메시지 표시
+    #         self.root.after(1000, self.show_tesseract_missing_warning)
+    #         return False
+
+    def check_paddleocr_status(self):
+        """PaddleOCR 설치 상태 확인"""
+        status = check_paddleocr()
         
         if status:
-            self.tesseract_status_label.config(
-                text=f"Tesseract OCR: 설치됨",
+            self.paddleocr_status_label.config(
+                text=f"PaddleOCR: 설치됨",
                 fg="green"
             )
-            
-            # 언어 설치 상태 업데이트
-            lang_status = f"언어 설치 상태: KOR: {'있음' if kor_available else '없음'}, JPN: {'있음' if jpn_available else '없음'}"
-            self.tesseract_lang_label.config(
-                text=lang_status, 
-                fg="green" if (kor_available and jpn_available) else "orange"
-            )
-            
-            # 언어 팩이 없는 경우 안내 메시지 표시
-            if not (kor_available and jpn_available):
-                self.root.after(1000, self.show_language_pack_missing_warning)
-                
             return True
         else:
-            self.tesseract_status_label.config(text="Tesseract OCR: 설치되지 않음", fg="red")
-            self.tesseract_lang_label.config(text="언어 설치 상태: 확인 불가", fg="red")
-            
+            self.paddleocr_status_label.config(text="PaddleOCR: 설치되지 않음", fg="red")
             # 미설치 상태일 때 사용자에게 즉시 안내 메시지 표시
-            self.root.after(1000, self.show_tesseract_missing_warning)
+            self.root.after(1000, self.show_paddleocr_missing_warning)
             return False
-        
-    def show_language_pack_missing_warning(self):
-        """언어 팩 미설치 경고 메시지 표시"""
+    
+    def show_paddleocr_missing_warning(self):
+        """PaddleOCR 미설치 경고 메시지 표시"""
         from tkinter import messagebox
-        from utils.tesseract_utils import show_tesseract_install_guide
         
-        missing_langs = []
-        status, kor_available, jpn_available = check_tesseract()
+        response = messagebox.showerror(
+            "PaddleOCR 미설치",
+            "이 프로그램은 PaddleOCR이 필요합니다.\n"
+            "프로그램을 계속 사용하려면 다음 명령어로 설치하세요:\n\n"
+            "pip install paddlepaddle -U\n"
+            "pip install paddleocr -U\n\n"
+            "설치 방법을 확인하시겠습니까?",
+            icon='error'
+        )
         
-        if not kor_available:
-            missing_langs.append("한국어(KOR)")
-        if not jpn_available:
-            missing_langs.append("일본어(JPN)")
+        if response == 'yes':
+            show_paddleocr_install_guide()
+            self.root.quit()
         
-        if missing_langs:
-            messagebox.showwarning(
-                "언어 팩 미설치",
-                f"Tesseract OCR은 설치되어 있지만, 필요한 언어 데이터({', '.join(missing_langs)})가 설치되어 있지 않습니다.\n" + 
-                "언어 데이터가 없으면 해당 언어의 이미지 텍스트 인식이 제대로 작동하지 않을 수 있습니다.\n\n" +
-                "언어 데이터 설치 방법을 확인하시겠습니까?"
-            )
-            show_tesseract_install_guide()
+    # def show_language_pack_missing_warning(self):
+    #     """언어 팩 미설치 경고 메시지 표시"""
+    #     from tkinter import messagebox
+    #     from utils.tesseract_utils import show_tesseract_install_guide
+        
+    #     missing_langs = []
+    #     status, kor_available, jpn_available = check_tesseract()
+        
+    #     if not kor_available:
+    #         missing_langs.append("한국어(KOR)")
+    #     if not jpn_available:
+    #         missing_langs.append("일본어(JPN)")
+        
+    #     if missing_langs:
+    #         messagebox.showwarning(
+    #             "언어 팩 미설치",
+    #             f"Tesseract OCR은 설치되어 있지만, 필요한 언어 데이터({', '.join(missing_langs)})가 설치되어 있지 않습니다.\n" + 
+    #             "언어 데이터가 없으면 해당 언어의 이미지 텍스트 인식이 제대로 작동하지 않을 수 있습니다.\n\n" +
+    #             "언어 데이터 설치 방법을 확인하시겠습니까?"
+    #         )
+    #         show_tesseract_install_guide()
+    
+    # def show_tesseract_missing_warning(self):
+    #     """Tesseract 미설치 경고 메시지 표시"""
+    #     from utils.tesseract_utils import show_tesseract_install_guide
+    #     show_tesseract_install_guide()
     
     def check_ollama_status(self):
         """Ollama 상태 확인"""

@@ -2,6 +2,7 @@
 import tkinter as tk
 from tkinter import ttk
 from config import DEFAULT_PADDING
+import logging
 
 def create_top_frame(root):
     """상단 프레임 생성 (로고와 제목)"""
@@ -13,9 +14,17 @@ def create_top_frame(root):
     top_frame.columnconfigure(1, weight=2)
     top_frame.columnconfigure(2, weight=1)
     
-    # 로고
-    logo_label = tk.Label(top_frame, text="LINE studio", fg="#8CC63F", font=("Arial", 20, "bold"))
-    logo_label.grid(row=0, column=0, sticky="w")
+    # LINE studio 로고 로드
+    logger = logging.getLogger(__name__)
+    try:
+        logo_photo = tk.PhotoImage(file="line-studio-logo.png")
+        logo_label = tk.Label(top_frame, image=logo_photo)
+        logo_label.image = logo_photo  # 참조 유지를 위해 필요
+        logo_label.grid(row=0, column=0, sticky="w")
+    except Exception as e:
+        logger.warning(f"로고 로드 오류: {e}")
+        logo_label = tk.Label(top_frame, text="LINE studio", fg="#8CC63F", font=("Arial", 20, "bold"))
+        logo_label.grid(row=0, column=0, sticky="w")
     
     # 제목
     title_label = tk.Label(top_frame, text="Powerpoint Image Translator", font=("Arial", 20))
@@ -46,7 +55,7 @@ def create_file_frame(root, select_file_callback):
     
     return file_frame, file_path_var, file_path_entry
 
-def create_server_status_frame(root, check_ollama_callback, check_tesseract_callback):
+def create_server_status_frame(root, check_ollama_callback, check_tesseract_callback, check_paddleocr_callback=None):
     """서버 상태 프레임 생성 (행 기준 레이아웃)"""
     server_status_frame = tk.LabelFrame(root, text="서버 상태", padx=8, pady=8)
     server_status_frame.grid(row=2, column=0, columnspan=2, padx=DEFAULT_PADDING, pady=DEFAULT_PADDING, sticky="ew")
@@ -89,12 +98,24 @@ def create_server_status_frame(root, check_ollama_callback, check_tesseract_call
                                      width=12, command=check_tesseract_callback)
     check_tesseract_button.grid(row=1, column=3, pady=2, padx=5, sticky="e")
     
+    # 3행: PaddleOCR 관련 정보 및 버튼 (새로 추가)
+    # PaddleOCR 상태
+    paddleocr_status_label = tk.Label(server_status_frame, text="PaddleOCR: 확인 중...")
+    paddleocr_status_label.grid(row=2, column=0, sticky="w", pady=2)
+    
+    # PaddleOCR 확인 버튼 (제공된 경우만)
+    if check_paddleocr_callback:
+        check_paddleocr_button = tk.Button(server_status_frame, text="PaddleOCR 확인", 
+                                        width=12, command=check_paddleocr_callback)
+        check_paddleocr_button.grid(row=2, column=3, pady=2, padx=5, sticky="e")
+    
     components = {
         "ollama_installed_label": ollama_installed_label,
         "ollama_running_label": ollama_running_label,
         "ollama_port_label": ollama_port_label,
         "tesseract_status_label": tesseract_status_label,
-        "tesseract_lang_label": tesseract_lang_label
+        "tesseract_lang_label": tesseract_lang_label,
+        "paddleocr_status_label": paddleocr_status_label
     }
     
     return server_status_frame, components

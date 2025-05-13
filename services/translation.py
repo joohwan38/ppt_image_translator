@@ -7,8 +7,9 @@ import traceback
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
-from utils.image_utils import resize_image_if_needed, overlay_text_on_image
+from utils.image_utils import resize_image_if_needed, overlay_text_on_image, enhanced_overlay_text
 from utils.image_utils import is_numeric_text
+from utils.paddle_ocr_utils import check_paddleocr
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ class TranslationService:
                 self._translate_image_elements(
                     ppt, image_elements, temp_dir, source_lang, target_lang, 
                     text_model, progress_callback, processed_items, total_elements, 
-                    options, temp_files  # temp_files 추가
+                    options, temp_files
                 )
                 
                 # 번역된 파일 저장
@@ -89,7 +90,8 @@ class TranslationService:
                 logger.info(f"번역된 파일 저장: {output_path}")
                 ppt.save(output_path)
                 
-                # 임시 이미지 파일 삭제
+                # 파일 저장 후 임시 이미지 파일 삭제
+                logger.info(f"번역 완료 - 임시 파일 {len(temp_files)}개 정리 시작")
                 self._cleanup_temp_files(temp_files)
                 
                 if status_callback:
@@ -106,6 +108,7 @@ class TranslationService:
         finally:
             # 실패 시에도 임시 파일 정리 시도
             if 'temp_files' in locals() and temp_files:
+                logger.info(f"오류 발생 - 임시 파일 정리 시도")
                 self._cleanup_temp_files(temp_files)
                 
             if debug_mode:
@@ -224,7 +227,7 @@ class TranslationService:
     def _translate_image_elements(self, ppt, image_elements, temp_dir, source_lang, target_lang,
                                 text_model, progress_callback=None, processed_items=0, total_elements=0,
                                 options=None, temp_files=None):
-        """이미지 요소 번역 처리"""
+        """이미지 요소 번역 처리 (PaddleOCR 전용)"""
         if options is None:
             options = {}
             
@@ -253,7 +256,8 @@ class TranslationService:
                         continue
                     
                     # 임시 이미지 파일 저장
-                    temp_image_path = os.path.join(temp_dir, f"slide_{slide_idx}_image_{image_element['shape_idx']}.png")
+                    timestamp = int(time.time() * 1000)
+                    temp_image_path = os.path.join(temp_dir, f"slide_{slide_idx}_image_{image_element['shape_idx']}_{timestamp}.png")
                     with open(temp_image_path, "wb") as f:
                         f.write(image_bytes)
                     
@@ -261,52 +265,29 @@ class TranslationService:
                     temp_files.append(temp_image_path)
                     logger.info(f"이미지 저장: {temp_image_path} ({len(image_bytes)} 바이트)")
                     
-                    # 이미지 처리: 리사이징 및 OCR
-                    temp_image_path = resize_image_if_needed(temp_image_path)
+                    # 이미지 처리: 리사이징
+                    resized_image_path = resize_image_if_needed(temp_image_path)
+                    if resized_image_path != temp_image_path:
+                        temp_files.append(resized_image_path)
+                        temp_image_path = resized_image_path
                     
                     try:
-                        import pytesseract
-                        import cv2
+                        # PaddleOCR 사용
+                        ocr = PaddleOCR(use_angle_cls=True, lang=map_language_to_paddle(source_lang_for_ocr))
+                        result = ocr.ocr(temp_image_path, cls=True)
                         
-                        # OCR 실행
-                        img = cv2.imread(temp_image_path)
-                        if img is None:
-                            logger.error(f"이미지 로드 실패: {temp_image_path}")
+                        if not result or len(result[0]) == 0:
+                            logger.warning("PaddleOCR: 텍스트를 감지하지 못했습니다.")
                             continue
-                            
-                        # OCR 언어 설정 (config.py의 OCR_LANG_MAPPING 참조)
-                        from config import OCR_LANG_MAPPING
                         
-                        default_lang = 'eng'
-                        ocr_lang = default_lang
+                        # 추출된 텍스트 결합
+                        extracted_text = '\n'.join([line[1][0] for line in result[0] if line[1][1] > 0.6])
                         
-                        # 소스 언어에 따른 OCR 언어 설정
-                        if source_lang_for_ocr in OCR_LANG_MAPPING:
-                            ocr_lang = '+'.join(OCR_LANG_MAPPING[source_lang_for_ocr])
-                        
-                        logger.info(f"OCR 언어 설정: {ocr_lang}")
-                        
-                        # OCR 실행 (여러 PSM 모드 시도)
-                        extracted_text = None
-                        
-                        for psm in [11, 6, 3, 4]:  # 다양한 PSM 모드 시도
-                            config = f'--oem 3 --psm {psm}'
-                            try:
-                                text = pytesseract.image_to_string(img, lang=ocr_lang, config=config)
-                                if text and text.strip():
-                                    extracted_text = text
-                                    logger.info(f"OCR 성공 (PSM {psm}): {len(text.strip())}자 추출")
-                                    break
-                            except Exception as e:
-                                logger.error(f"OCR 오류 (PSM {psm}): {e}")
-                                continue
-                        
-                        # 텍스트 추출 결과 확인
                         if not extracted_text or not extracted_text.strip():
-                            logger.warning("OCR 실패: 텍스트를 추출할 수 없습니다.")
+                            logger.warning("PaddleOCR: 유효한 텍스트가 없습니다.")
                             continue
                             
-                        logger.info(f"추출된 텍스트: '{extracted_text.strip()}'")
+                        logger.info(f"PaddleOCR 추출된 텍스트: '{extracted_text[:100]}'")
                         
                         # 텍스트 번역
                         translated_text = self.ollama_service.translate_text(
@@ -317,7 +298,6 @@ class TranslationService:
                         
                         if translated_text and translated_text != extracted_text:
                             # 번역된 텍스트로 이미지 오버레이
-                            timestamp = int(time.time() * 1000)
                             translated_image_path = overlay_text_on_image(
                                 temp_image_path, 
                                 translated_text,
@@ -344,21 +324,9 @@ class TranslationService:
                         else:
                             logger.warning("텍스트가 번역되지 않았거나 원본과 동일합니다.")
                     
-                    except ImportError:
-                        logger.error("pytesseract 또는 OpenCV 모듈이 설치되지 않았습니다.")
-                    
                     except Exception as e:
                         logger.error(f"이미지 OCR 처리 오류: {e}")
                         logger.debug(traceback.format_exc())
-                    
-                    # 원본 임시 파일 삭제 (즉시 삭제 옵션)
-                    try:
-                        if os.path.exists(temp_image_path):
-                            os.remove(temp_image_path)
-                            if temp_image_path in temp_files:
-                                temp_files.remove(temp_image_path)  # 목록에서 제거
-                    except Exception as e:
-                        logger.debug(f"임시 파일 삭제 실패: {e}")
             
             except Exception as e:
                 logger.error(f"이미지 번역 오류 (요소 {idx+1}/{len(image_elements)}): {str(e)}")
@@ -377,7 +345,9 @@ class TranslationService:
                 if os.path.exists(file_path):
                     os.remove(file_path)
                     count += 1
+                else:
+                    logger.debug(f"파일이 이미 삭제됨: {file_path}")
             except Exception as e:
                 logger.warning(f"임시 파일 삭제 실패: {file_path}, 오류: {e}")
         
-        logger.info(f"{count}개의 임시 이미지 파일 삭제됨")
+        logger.info(f"{count}개의 임시 이미지 파일 삭제됨 (총 {len(file_list)}개 중)")

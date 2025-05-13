@@ -7,9 +7,12 @@ requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.2.5",
     "opencv-python>=4.11.0.86",
+    "paddleocr>=2.10.0",
+    "paddlepaddle>=3.0.0",
     "pillow>=11.2.1",
     "psutil>=7.0.0",
     "pytesseract>=0.3.13",
     "python-pptx>=1.0.2",
     "requests>=2.32.3",
+    "tqdm>=4.67.1",
 ]

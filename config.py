@@ -4,7 +4,7 @@ import os
 # 애플리케이션 기본 설정
 APP_TITLE = "Powerpoint Image Translator"
 APP_VERSION = "1.0.0"
-DEFAULT_WINDOW_SIZE = "850x700"
+DEFAULT_WINDOW_SIZE = "800x1000"
 DEFAULT_PADDING = 10
 
 # 언어 설정
